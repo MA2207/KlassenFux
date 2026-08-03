@@ -1081,11 +1081,10 @@ async function deleteSchueler(id, name) {
 }
 
 // ── EINSTELLUNGEN ──
-const SETTINGS_KEY = 'kf_einstellungen';
 let unterrichtsstunden = [];
 
-function loadEinstellungen() {
-  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+function applyEinstellungen(saved) {
+  saved = saved || {};
   document.getElementById('set-lehrername').value = saved.lehrername || '';
   document.getElementById('set-schulname').value = saved.schulname || '';
   document.getElementById('set-schuladresse').value = saved.schuladresse || '';
@@ -1101,7 +1100,12 @@ function loadEinstellungen() {
   renderFreieTage(saved.freieTage || []);
 }
 
-function saveEinstellungen() {
+async function loadEinstellungen() {
+  const { data, error } = await sb.from('einstellungen').select('daten').eq('id', 1).single();
+  applyEinstellungen(data?.daten || {});
+}
+
+async function saveEinstellungen() {
   const slots = [...document.querySelectorAll('.time-slot')].map(s => ({
     bezeichnung: s.querySelector('[data-bez]').value.trim(),
     von: s.querySelector('[data-von]').value,
@@ -1113,7 +1117,7 @@ function saveEinstellungen() {
     datum: r.querySelector('[data-ft-datum]').value,
   })).filter(t => t.bezeichnung || t.datum);
 
-  const data = {
+  const daten = {
     lehrername: document.getElementById('set-lehrername').value.trim(),
     schulname: document.getElementById('set-schulname').value.trim(),
     schuladresse: document.getElementById('set-schuladresse').value.trim(),
@@ -1122,7 +1126,7 @@ function saveEinstellungen() {
     bundesland: document.getElementById('set-bundesland').value,
     freieTage,
   };
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
+  await sb.from('einstellungen').upsert({ id: 1, daten });
 }
 
 let _autoSaveTimer = null;
@@ -1130,8 +1134,8 @@ function autoSave() {
   clearTimeout(_autoSaveTimer);
   const ind = document.getElementById('autosave-indicator');
   if (ind) ind.textContent = '💾 wird gespeichert…';
-  _autoSaveTimer = setTimeout(() => {
-    saveEinstellungen();
+  _autoSaveTimer = setTimeout(async () => {
+    await saveEinstellungen();
     if (ind) { ind.textContent = '✓ gespeichert'; setTimeout(() => ind.textContent = '', 2000); }
   }, 600);
 }
