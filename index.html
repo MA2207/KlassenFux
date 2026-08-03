@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#16a34a">
+  <title>KlassenFux</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #16a34a;
+      --green-light: #dcfce7;
+      --green-dark: #15803d;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-400: #9ca3af;
+      --gray-600: #4b5563;
+      --gray-800: #1f2937;
+      --red: #dc2626;
+      --shadow: 0 1px 3px rgba(0,0,0,0.12);
+      --radius: 10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-800);
+      min-height: 100vh;
+    }
+
+    /* ── Layout ── */
+    .app { display: flex; min-height: 100vh; }
+
+    /* Sidebar (Desktop) */
+    .sidebar {
+      width: 220px;
+      background: white;
+      border-right: 1px solid var(--gray-200);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 100;
+    }
+    .sidebar-logo {
+      padding: 20px 16px;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--green);
+      border-bottom: 1px solid var(--gray-200);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .sidebar-logo span { font-size: 1.5rem; }
+    .sidebar-nav { padding: 12px 8px; flex: 1; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      color: var(--gray-600);
+      margin-bottom: 2px;
+      transition: all 0.15s;
+      border: none; background: none; width: 100%; text-align: left;
+    }
+    .nav-item:hover { background: var(--gray-100); color: var(--gray-800); }
+    .nav-item.active { background: var(--green-light); color: var(--green-dark); font-weight: 600; }
+    .nav-icon { font-size: 1.2rem; width: 24px; text-align: center; }
+
+    /* Main content */
+    .main {
+      margin-left: 220px;
+      flex: 1;
+      padding: 24px;
+      max-width: 960px;
+    }
+
+    /* Page header */
+    .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 1.5rem; font-weight: 700; }
+
+    /* Cards */
+    .card {
+      background: white;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-primary { background: var(--green); color: white; }
+    .btn-primary:hover { background: var(--green-dark); }
+    .btn-secondary { background: var(--gray-100); color: var(--gray-800); }
+    .btn-secondary:hover { background: var(--gray-200); }
+    .btn-danger { background: #fee2e2; color: var(--red); }
+    .btn-danger:hover { background: #fca5a5; }
+    .btn-sm { padding: 5px 12px; font-size: 0.82rem; }
+
+    /* Forms */
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--gray-600); margin-bottom: 5px; }
+    .form-input, .form-select {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--gray-200);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      color: var(--gray-800);
+      background: white;
+      transition: border 0.15s;
+    }
+    .form-input:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(22,163,74,0.1);
+    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    /* Section title */
+    .section-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--gray-400);
+      margin-bottom: 12px;
+      margin-top: 20px;
+    }
+
+    /* List items */
+    .list-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px;
+      border-radius: 8px;
+      background: white;
+      box-shadow: var(--shadow);
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .list-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); transform: translateY(-1px); }
+    .list-item-info { display: flex; flex-direction: column; gap: 2px; }
+    .list-item-name { font-weight: 600; font-size: 1rem; }
+    .list-item-sub { font-size: 0.82rem; color: var(--gray-400); }
+    .list-item-actions { display: flex; gap: 6px; }
+
+    /* Badge */
+    .badge {
+      padding: 3px 8px; border-radius: 99px;
+      font-size: 0.75rem; font-weight: 600;
+      background: var(--green-light); color: var(--green-dark);
+    }
+    .badge-m { background: #dbeafe; color: #1d4ed8; }
+    .badge-w { background: #fce7f3; color: #be185d; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 500;
+      padding: 16px;
+    }
+    .modal {
+      background: white;
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 580px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 24px;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .modal-title { font-size: 1.2rem; font-weight: 700; }
+    .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--gray-400); }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+    /* Phone/Email repeat fields */
+    .repeat-field {
+      display: grid; grid-template-columns: 1fr 1.5fr auto;
+      gap: 8px; align-items: center; margin-bottom: 8px;
+    }
+    .add-field-btn {
+      background: none; border: 1px dashed var(--gray-200);
+      border-radius: 8px; padding: 8px; width: 100%;
+      color: var(--gray-400); cursor: pointer; font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+    .add-field-btn:hover { border-color: var(--green); color: var(--green); }
+    .remove-field-btn {
+      background: none; border: none; color: var(--gray-400);
+      cursor: pointer; font-size: 1.1rem; padding: 4px;
+    }
+    .remove-field-btn:hover { color: var(--red); }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center; padding: 48px 24px; color: var(--gray-400);
+    }
+    .empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty-state-text { font-size: 1rem; margin-bottom: 16px; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+      background: var(--gray-800); color: white;
+      padding: 10px 20px; border-radius: 99px;
+      font-size: 0.9rem; z-index: 999;
+      opacity: 0; transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: var(--green); }
+    .toast.error { background: var(--red); }
+
+    /* Bottom nav (Mobile) */
+    .bottom-nav {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: white;
+      border-top: 1px solid var(--gray-200);
+      z-index: 200;
+    }
+    .bottom-nav-items { display: flex; }
+    .bottom-nav-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      padding: 10px 4px 14px;
+      font-size: 0.7rem; color: var(--gray-400);
+      cursor: pointer; border: none; background: none;
+      transition: color 0.15s;
+    }
+    .bottom-nav-item.active { color: var(--green); }
+    .bottom-nav-icon { font-size: 1.4rem; margin-bottom: 2px; }
+
+    /* Mobile header */
+    .mobile-header {
+      display: none;
+      background: white;
+      border-bottom: 1px solid var(--gray-200);
+      padding: 14px 16px;
+      position: sticky; top: 0; z-index: 100;
+      align-items: center; justify-content: space-between;
+    }
+    .mobile-title { font-size: 1.1rem; font-weight: 700; color: var(--green); }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; padding: 16px 12px 80px; }
+      .bottom-nav { display: block; }
+      .mobile-header { display: flex; }
+      .form-row { grid-template-columns: 1fr; }
+      .form-row-3 { grid-template-columns: 1fr; }
+      .repeat-field { grid-template-columns: 1fr 1fr auto; }
+    }
+
+    /* Hidden */
+    .hidden { display: none !important; }
+
+    /* Loading */
+    .spinner {
+      display: inline-block; width: 20px; height: 20px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Detail view */
+    .detail-field { margin-bottom: 12px; }
+    .detail-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; color: var(--gray-400); margin-bottom: 2px; }
+    .detail-value { font-size: 0.95rem; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 480px) { .detail-grid { grid-template-columns: 1fr; } }
+
+    /* Search */
+    .search-bar {
+      position: relative; margin-bottom: 16px;
+    }
+    .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--gray-400); }
+    .search-input {
+      width: 100%; padding: 9px 12px 9px 36px;
+      border: 1px solid var(--gray-200); border-radius: 8px;
+      font-size: 0.95rem;
+    }
+    .search-input:focus { outline: none; border-color: var(--green); }
+
+    /* Stats */
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: white; border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); text-align: center; }
+    .stat-number { font-size: 2rem; font-weight: 700; color: var(--green); }
+    .stat-label { font-size: 0.8rem; color: var(--gray-400); margin-top: 2px; }
+    @media (max-width: 480px) { .stats { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-logo"><span>🦊</span> KlassenFux</div>
+  <nav class="sidebar-nav">
+    <button class="nav-item active" onclick="showPage('dashboard')">
+      <span class="nav-icon">🏠</span> Dashboard
+    </button>
+    <button class="nav-item" onclick="showPage('klassen')">
+      <span class="nav-icon">🏫</span> Klassen
+    </button>
+    <button class="nav-item" onclick="showPage('schueler')">
+      <span class="nav-icon">👤</span> Schüler
+    </button>
+  </nav>
+</div>
+
+<!-- Mobile header -->
+<div class="mobile-header">
+  <div class="mobile-title">🦊 KlassenFux</div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- DASHBOARD -->
+  <div id="page-dashboard">
+    <div class="page-header">
+      <div class="page-title">Dashboard</div>
+    </div>
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-number" id="stat-klassen">–</div>
+        <div class="stat-label">Klassen</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-schueler">–</div>
+        <div class="stat-label">Schüler</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-maedchen">–</div>
+        <div class="stat-label">Mädchen</div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-weight:600; margin-bottom:8px;">Schnellzugriff</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="openKlasseForm()">🏫 Neue Klasse</button>
+        <button class="btn btn-secondary" onclick="showPage('schueler'); setTimeout(openSchuelerForm,100)">👤 Neuer Schüler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KLASSEN -->
+  <div id="page-klassen" class="hidden">
+    <div class="page-header">
+      <div class="page-title">Klassen</div>
+      <button class="btn btn-primary" onclick="openKlasseForm()">＋ Neue Klasse</button>
+    </div>
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" type="text" placeholder="Klasse suchen…" oninput="filterKlassen(this.value)">
+    </div>
+    <div id="klassen-list"></div>
+  </div>
+
+  <!-- SCHÜLER -->
+  <div id="page-schueler" class="hidden">
+    <div class="page-header">
+      <div class="page-title">Schüler</div>
+      <button class="btn btn-primary" onclick="openSchuelerForm()">＋ Neuer Schüler</button>
+    </div>
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" type="text" placeholder="Schüler suchen…" oninput="filterSchueler(this.value)">
+    </div>
+    <div id="schueler-list"></div>
+  </div>
+
+</div>
+
+<!-- Bottom nav (Mobile) -->
+<div class="bottom-nav">
+  <div class="bottom-nav-items">
+    <button class="bottom-nav-item active" onclick="showPage('dashboard')">
+      <span class="bottom-nav-icon">🏠</span>Dashboard
+    </button>
+    <button class="bottom-nav-item" onclick="showPage('klassen')">
+      <span class="bottom-nav-icon">🏫</span>Klassen
+    </button>
+    <button class="bottom-nav-item" onclick="showPage('schueler')">
+      <span class="bottom-nav-icon">👤</span>Schüler
+    </button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ── MODALS ── -->
+
+<!-- Klasse Form Modal -->
+<div class="modal-overlay hidden" id="modal-klasse">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-klasse-title">Neue Klasse</div>
+      <button class="modal-close" onclick="closeModal('modal-klasse')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Klassenname *</label>
+      <input class="form-input" id="klasse-name" type="text" placeholder="z.B. 10a, 7b">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Schuljahr *</label>
+      <input class="form-input" id="klasse-schuljahr" type="text" placeholder="z.B. 2026/27">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-klasse')">Abbrechen</button>
+      <button class="btn btn-primary" id="btn-save-klasse" onclick="saveKlasse()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schüler Form Modal -->
+<div class="modal-overlay hidden" id="modal-schueler">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-schueler-title">Neuer Schüler</div>
+      <button class="modal-close" onclick="closeModal('modal-schueler')">✕</button>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Vorname *</label>
+        <input class="form-input" id="s-vorname" type="text" placeholder="Vorname">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nachname *</label>
+        <input class="form-input" id="s-nachname" type="text" placeholder="Nachname">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Geschlecht</label>
+        <select class="form-select" id="s-geschlecht">
+          <option value="">– bitte wählen –</option>
+          <option value="m">männlich</option>
+          <option value="w">weiblich</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Geburtsdatum</label>
+        <input class="form-input" id="s-geburtsdatum" type="date">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Straße</label>
+      <input class="form-input" id="s-strasse" type="text" placeholder="Straße und Hausnummer">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">PLZ</label>
+        <input class="form-input" id="s-plz" type="text" placeholder="PLZ">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ort</label>
+        <input class="form-input" id="s-ort" type="text" placeholder="Ort">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Klasse</label>
+      <select class="form-select" id="s-klasse">
+        <option value="">– keine Klasse –</option>
+      </select>
+    </div>
+
+    <div class="section-title">Telefonnummern (bis zu 4)</div>
+    <div id="telefon-fields"></div>
+    <button class="add-field-btn" id="btn-add-telefon" onclick="addTelefonField()">＋ Telefonnummer hinzufügen</button>
+
+    <div class="section-title">E-Mail-Adressen (bis zu 3)</div>
+    <div id="email-fields"></div>
+    <button class="add-field-btn" id="btn-add-email" onclick="addEmailField()">＋ E-Mail-Adresse hinzufügen</button>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-schueler')">Abbrechen</button>
+      <button class="btn btn-primary" id="btn-save-schueler" onclick="saveSchueler()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schüler Detail Modal -->
+<div class="modal-overlay hidden" id="modal-detail">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="detail-name">Schüler</div>
+      <button class="modal-close" onclick="closeModal('modal-detail')">✕</button>
+    </div>
+    <div id="detail-content"></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="btn-delete-schueler">🗑 Löschen</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-detail')">Schließen</button>
+      <button class="btn btn-primary btn-sm" id="btn-edit-schueler">✏️ Bearbeiten</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Supabase Init ──
+const SUPABASE_URL = 'https://gwmhzmfrwrymakuzgkdu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd3bWh6bWZyd3J5bWFrdXpna2R1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NTI0NjEsImV4cCI6MjEwMTMyODQ2MX0.9Nm3iutjRPJKcp6e4RJbIoSSmzQVfuxSyz06fpfauQQ';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── State ──
+let allKlassen = [];
+let allSchueler = [];
+let editingKlasseId = null;
+let editingSchuelerId = null;
+let currentDetailId = null;
+
+// ── Navigation ──
+function showPage(page) {
+  ['dashboard','klassen','schueler'].forEach(p => {
+    document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
+  });
+  document.querySelectorAll('.nav-item, .bottom-nav-item').forEach((el, i) => {
+    const pages = ['dashboard','klassen','schueler'];
+    el.classList.toggle('active', pages[i % 3] === page);
+  });
+  if (page === 'klassen') loadKlassen();
+  if (page === 'schueler') loadSchueler();
+  if (page === 'dashboard') loadStats();
+}
+
+// ── Toast ──
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+// ── Modal helpers ──
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ── Stats ──
+async function loadStats() {
+  const [{ count: k }, { count: s }, { count: m }] = await Promise.all([
+    sb.from('klassen').select('*', { count: 'exact', head: true }),
+    sb.from('schueler').select('*', { count: 'exact', head: true }),
+    sb.from('schueler').select('*', { count: 'exact', head: true }).eq('geschlecht', 'w'),
+  ]);
+  document.getElementById('stat-klassen').textContent = k ?? 0;
+  document.getElementById('stat-schueler').textContent = s ?? 0;
+  document.getElementById('stat-maedchen').textContent = m ?? 0;
+}
+
+// ── KLASSEN ──
+async function loadKlassen() {
+  const { data } = await sb.from('klassen').select('*').order('name');
+  allKlassen = data || [];
+  renderKlassen(allKlassen);
+}
+
+function renderKlassen(list) {
+  const el = document.getElementById('klassen-list');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">🏫</div>
+      <div class="empty-state-text">Noch keine Klassen angelegt.</div>
+      <button class="btn btn-primary" onclick="openKlasseForm()">Erste Klasse anlegen</button>
+    </div>`;
+    return;
+  }
+  el.innerHTML = list.map(k => `
+    <div class="list-item">
+      <div class="list-item-info">
+        <div class="list-item-name">${k.name}</div>
+        <div class="list-item-sub">Schuljahr ${k.schuljahr}</div>
+      </div>
+      <div class="list-item-actions">
+        <button class="btn btn-secondary btn-sm" onclick="editKlasse('${k.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteKlasse('${k.id}', '${k.name}')">🗑</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterKlassen(q) {
+  renderKlassen(allKlassen.filter(k =>
+    k.name.toLowerCase().includes(q.toLowerCase()) ||
+    k.schuljahr.toLowerCase().includes(q.toLowerCase())
+  ));
+}
+
+function openKlasseForm(id) {
+  editingKlasseId = null;
+  document.getElementById('klasse-name').value = '';
+  document.getElementById('klasse-schuljahr').value = '';
+  document.getElementById('modal-klasse-title').textContent = 'Neue Klasse';
+  openModal('modal-klasse');
+  showPage('klassen');
+}
+
+function editKlasse(id) {
+  const k = allKlassen.find(x => x.id === id);
+  if (!k) return;
+  editingKlasseId = id;
+  document.getElementById('klasse-name').value = k.name;
+  document.getElementById('klasse-schuljahr').value = k.schuljahr;
+  document.getElementById('modal-klasse-title').textContent = 'Klasse bearbeiten';
+  openModal('modal-klasse');
+}
+
+async function saveKlasse() {
+  const name = document.getElementById('klasse-name').value.trim();
+  const schuljahr = document.getElementById('klasse-schuljahr').value.trim();
+  if (!name || !schuljahr) return showToast('Bitte alle Felder ausfüllen.', 'error');
+
+  const btn = document.getElementById('btn-save-klasse');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+
+  const payload = { name, schuljahr };
+  let error;
+  if (editingKlasseId) {
+    ({ error } = await sb.from('klassen').update(payload).eq('id', editingKlasseId));
+  } else {
+    ({ error } = await sb.from('klassen').insert(payload));
+  }
+
+  btn.innerHTML = 'Speichern'; btn.disabled = false;
+  if (error) return showToast('Fehler: ' + error.message, 'error');
+  closeModal('modal-klasse');
+  showToast(editingKlasseId ? 'Klasse aktualisiert ✓' : 'Klasse angelegt ✓', 'success');
+  loadKlassen();
+  loadStats();
+}
+
+async function deleteKlasse(id, name) {
+  if (!confirm(`Klasse "${name}" wirklich löschen?`)) return;
+  const { error } = await sb.from('klassen').delete().eq('id', id);
+  if (error) return showToast('Fehler: ' + error.message, 'error');
+  showToast('Klasse gelöscht.', 'success');
+  loadKlassen();
+  loadStats();
+}
+
+// ── SCHÜLER ──
+async function loadSchueler() {
+  const { data } = await sb.from('schueler').select('*, klassen(name, schuljahr)').order('nachname');
+  allSchueler = data || [];
+  renderSchueler(allSchueler);
+}
+
+function renderSchueler(list) {
+  const el = document.getElementById('schueler-list');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">👤</div>
+      <div class="empty-state-text">Noch keine Schüler eingetragen.</div>
+      <button class="btn btn-primary" onclick="openSchuelerForm()">Ersten Schüler eintragen</button>
+    </div>`;
+    return;
+  }
+  el.innerHTML = list.map(s => `
+    <div class="list-item" onclick="showDetail('${s.id}')">
+      <div class="list-item-info">
+        <div class="list-item-name">${s.nachname}, ${s.vorname}
+          <span class="badge badge-${s.geschlecht}" style="margin-left:6px">${s.geschlecht === 'm' ? '♂' : s.geschlecht === 'w' ? '♀' : ''}</span>
+        </div>
+        <div class="list-item-sub">${s.klassen ? s.klassen.name + ' · ' + s.klassen.schuljahr : 'Keine Klasse'}</div>
+      </div>
+      <span style="color:var(--gray-400);">›</span>
+    </div>
+  `).join('');
+}
+
+function filterSchueler(q) {
+  q = q.toLowerCase();
+  renderSchueler(allSchueler.filter(s =>
+    s.nachname.toLowerCase().includes(q) ||
+    s.vorname.toLowerCase().includes(q) ||
+    (s.klassen?.name || '').toLowerCase().includes(q)
+  ));
+}
+
+// ── Schüler Form ──
+let telefonCount = 0;
+let emailCount = 0;
+
+async function openSchuelerForm(id) {
+  editingSchuelerId = id || null;
+  telefonCount = 0; emailCount = 0;
+  document.getElementById('telefon-fields').innerHTML = '';
+  document.getElementById('email-fields').innerHTML = '';
+
+  // Load classes for dropdown
+  if (!allKlassen.length) await loadKlassen();
+  const sel = document.getElementById('s-klasse');
+  sel.innerHTML = '<option value="">– keine Klasse –</option>' +
+    allKlassen.map(k => `<option value="${k.id}">${k.name} (${k.schuljahr})</option>`).join('');
+
+  if (id) {
+    // Edit mode
+    const s = allSchueler.find(x => x.id === id);
+    if (!s) return;
+    document.getElementById('modal-schueler-title').textContent = 'Schüler bearbeiten';
+    document.getElementById('s-vorname').value = s.vorname;
+    document.getElementById('s-nachname').value = s.nachname;
+    document.getElementById('s-geschlecht').value = s.geschlecht || '';
+    document.getElementById('s-geburtsdatum').value = s.geburtsdatum || '';
+    document.getElementById('s-strasse').value = s.strasse || '';
+    document.getElementById('s-plz').value = s.plz || '';
+    document.getElementById('s-ort').value = s.ort || '';
+    document.getElementById('s-klasse').value = s.klasse_id || '';
+
+    // Load phone & emails
+    const [{ data: tel }, { data: em }] = await Promise.all([
+      sb.from('telefonnummern').select('*').eq('schueler_id', id).order('reihenfolge'),
+      sb.from('emailadressen').select('*').eq('schueler_id', id).order('reihenfolge'),
+    ]);
+    (tel || []).forEach(t => addTelefonField(t.bezeichnung, t.nummer));
+    (em || []).forEach(e => addEmailField(e.bezeichnung, e.email));
+  } else {
+    document.getElementById('modal-schueler-title').textContent = 'Neuer Schüler';
+    ['s-vorname','s-nachname','s-strasse','s-plz','s-ort'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('s-geschlecht').value = '';
+    document.getElementById('s-geburtsdatum').value = '';
+    document.getElementById('s-klasse').value = '';
+  }
+
+  closeModal('modal-detail');
+  openModal('modal-schueler');
+}
+
+function addTelefonField(bez = '', num = '') {
+  if (telefonCount >= 4) return;
+  telefonCount++;
+  const div = document.createElement('div');
+  div.className = 'repeat-field';
+  div.innerHTML = `
+    <input class="form-input" type="text" placeholder="z.B. Mutter" value="${bez}" data-tel-bez>
+    <input class="form-input" type="tel" placeholder="Telefonnummer" value="${num}" data-tel-num>
+    <button class="remove-field-btn" onclick="removeField(this, 'telefon')">✕</button>
+  `;
+  document.getElementById('telefon-fields').appendChild(div);
+  document.getElementById('btn-add-telefon').style.display = telefonCount >= 4 ? 'none' : '';
+}
+
+function addEmailField(bez = '', em = '') {
+  if (emailCount >= 3) return;
+  emailCount++;
+  const div = document.createElement('div');
+  div.className = 'repeat-field';
+  div.innerHTML = `
+    <input class="form-input" type="text" placeholder="z.B. Vater" value="${bez}" data-email-bez>
+    <input class="form-input" type="email" placeholder="E-Mail-Adresse" value="${em}" data-email-addr>
+    <button class="remove-field-btn" onclick="removeField(this, 'email')">✕</button>
+  `;
+  document.getElementById('email-fields').appendChild(div);
+  document.getElementById('btn-add-email').style.display = emailCount >= 3 ? 'none' : '';
+}
+
+function removeField(btn, type) {
+  btn.parentElement.remove();
+  if (type === 'telefon') {
+    telefonCount--;
+    document.getElementById('btn-add-telefon').style.display = '';
+  } else {
+    emailCount--;
+    document.getElementById('btn-add-email').style.display = '';
+  }
+}
+
+async function saveSchueler() {
+  const vorname = document.getElementById('s-vorname').value.trim();
+  const nachname = document.getElementById('s-nachname').value.trim();
+  if (!vorname || !nachname) return showToast('Vor- und Nachname sind Pflichtfelder.', 'error');
+
+  const btn = document.getElementById('btn-save-schueler');
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+
+  const payload = {
+    vorname, nachname,
+    geschlecht: document.getElementById('s-geschlecht').value || null,
+    geburtsdatum: document.getElementById('s-geburtsdatum').value || null,
+    strasse: document.getElementById('s-strasse').value.trim() || null,
+    plz: document.getElementById('s-plz').value.trim() || null,
+    ort: document.getElementById('s-ort').value.trim() || null,
+    klasse_id: document.getElementById('s-klasse').value || null,
+  };
+
+  let schuelerId = editingSchuelerId;
+  let error;
+  if (editingSchuelerId) {
+    ({ error } = await sb.from('schueler').update(payload).eq('id', editingSchuelerId));
+  } else {
+    const { data, error: e } = await sb.from('schueler').insert(payload).select().single();
+    error = e; schuelerId = data?.id;
+  }
+
+  if (!error && schuelerId) {
+    // Save phone numbers
+    await sb.from('telefonnummern').delete().eq('schueler_id', schuelerId);
+    const telFields = document.querySelectorAll('#telefon-fields .repeat-field');
+    const telData = [...telFields].map((f, i) => ({
+      schueler_id: schuelerId,
+      bezeichnung: f.querySelector('[data-tel-bez]').value.trim() || null,
+      nummer: f.querySelector('[data-tel-num]').value.trim(),
+      reihenfolge: i + 1,
+    })).filter(t => t.nummer);
+    if (telData.length) await sb.from('telefonnummern').insert(telData);
+
+    // Save emails
+    await sb.from('emailadressen').delete().eq('schueler_id', schuelerId);
+    const emFields = document.querySelectorAll('#email-fields .repeat-field');
+    const emData = [...emFields].map((f, i) => ({
+      schueler_id: schuelerId,
+      bezeichnung: f.querySelector('[data-email-bez]').value.trim() || null,
+      email: f.querySelector('[data-email-addr]').value.trim(),
+      reihenfolge: i + 1,
+    })).filter(e => e.email);
+    if (emData.length) await sb.from('emailadressen').insert(emData);
+  }
+
+  btn.innerHTML = 'Speichern'; btn.disabled = false;
+  if (error) return showToast('Fehler: ' + error.message, 'error');
+  closeModal('modal-schueler');
+  showToast(editingSchuelerId ? 'Schüler aktualisiert ✓' : 'Schüler gespeichert ✓', 'success');
+  loadSchueler(); loadStats();
+}
+
+// ── Schüler Detail ──
+async function showDetail(id) {
+  currentDetailId = id;
+  const s = allSchueler.find(x => x.id === id);
+  if (!s) return;
+
+  const [{ data: tel }, { data: em }] = await Promise.all([
+    sb.from('telefonnummern').select('*').eq('schueler_id', id).order('reihenfolge'),
+    sb.from('emailadressen').select('*').eq('schueler_id', id).order('reihenfolge'),
+  ]);
+
+  document.getElementById('detail-name').textContent = `${s.vorname} ${s.nachname}`;
+
+  const gebDat = s.geburtsdatum ? new Date(s.geburtsdatum).toLocaleDateString('de-DE') : '–';
+  const geschlecht = s.geschlecht === 'm' ? 'männlich' : s.geschlecht === 'w' ? 'weiblich' : '–';
+  const adresse = [s.strasse, s.plz && s.ort ? s.plz + ' ' + s.ort : s.ort || s.plz].filter(Boolean).join(', ') || '–';
+
+  const telHTML = (tel || []).map(t =>
+    `<div><b>${t.bezeichnung || 'Telefon'}:</b> <a href="tel:${t.nummer}">${t.nummer}</a></div>`
+  ).join('') || '–';
+
+  const emHTML = (em || []).map(e =>
+    `<div><b>${e.bezeichnung || 'E-Mail'}:</b> <a href="mailto:${e.email}">${e.email}</a></div>`
+  ).join('') || '–';
+
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-grid">
+      <div class="detail-field"><div class="detail-label">Klasse</div><div class="detail-value">${s.klassen ? s.klassen.name + ' (' + s.klassen.schuljahr + ')' : '–'}</div></div>
+      <div class="detail-field"><div class="detail-label">Geschlecht</div><div class="detail-value">${geschlecht}</div></div>
+      <div class="detail-field"><div class="detail-label">Geburtsdatum</div><div class="detail-value">${gebDat}</div></div>
+      <div class="detail-field"><div class="detail-label">Adresse</div><div class="detail-value">${adresse}</div></div>
+    </div>
+    <div class="detail-field" style="margin-top:16px"><div class="detail-label">Telefon</div><div class="detail-value">${telHTML}</div></div>
+    <div class="detail-field" style="margin-top:12px"><div class="detail-label">E-Mail</div><div class="detail-value">${emHTML}</div></div>
+  `;
+
+  document.getElementById('btn-edit-schueler').onclick = () => openSchuelerForm(id);
+  document.getElementById('btn-delete-schueler').onclick = () => deleteSchueler(id, s.vorname + ' ' + s.nachname);
+  openModal('modal-detail');
+}
+
+async function deleteSchueler(id, name) {
+  if (!confirm(`Schüler "${name}" wirklich löschen?`)) return;
+  const { error } = await sb.from('schueler').delete().eq('id', id);
+  if (error) return showToast('Fehler: ' + error.message, 'error');
+  closeModal('modal-detail');
+  showToast('Schüler gelöscht.', 'success');
+  loadSchueler(); loadStats();
+}
+
+// ── Init ──
+loadStats();
+</script>
+</body>
+</html>
