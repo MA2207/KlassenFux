@@ -477,7 +477,7 @@
   <div id="page-einstellungen" class="hidden">
     <div class="page-header">
       <div class="page-title">Einstellungen</div>
-      <button class="btn btn-primary btn-sm" onclick="saveEinstellungen()">💾 Speichern</button>
+      <span id="autosave-indicator" style="font-size:0.8rem; color:var(--gray-400); align-self:center;"></span>
     </div>
 
     <!-- Allgemeine Daten -->
@@ -486,19 +486,19 @@
       <div class="settings-grid">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Lehrername</label>
-          <input class="form-input" id="set-lehrername" type="text" placeholder="z.B. Max Mustermann">
+          <input class="form-input" id="set-lehrername" type="text" placeholder="z.B. Max Mustermann" oninput="autoSave()">
         </div>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Schulname</label>
-          <input class="form-input" id="set-schulname" type="text" placeholder="z.B. Realschule Musterstadt">
+          <input class="form-input" id="set-schulname" type="text" placeholder="z.B. Realschule Musterstadt" oninput="autoSave()">
         </div>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Schuladresse</label>
-          <input class="form-input" id="set-schuladresse" type="text" placeholder="z.B. Musterstraße 1, 12345 Musterstadt">
+          <input class="form-input" id="set-schuladresse" type="text" placeholder="z.B. Musterstraße 1, 12345 Musterstadt" oninput="autoSave()">
         </div>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Schuljahr</label>
-          <input class="form-input" id="set-schuljahr" type="text" placeholder="z.B. 2025/2026">
+          <input class="form-input" id="set-schuljahr" type="text" placeholder="z.B. 2025/2026" oninput="autoSave()">
         </div>
       </div>
     </div>
@@ -515,7 +515,7 @@
       <div class="settings-section-title">Bundesland &amp; Schulferien</div>
       <div class="form-group">
         <label class="form-label">Bundesland</label>
-        <select class="form-select" id="set-bundesland" onchange="onBundeslandChange()">
+        <select class="form-select" id="set-bundesland" onchange="onBundeslandChange(); autoSave()">
           <option value="">– bitte wählen –</option>
           <option value="BB">Brandenburg</option>
           <option value="BE">Berlin</option>
@@ -1092,7 +1092,6 @@ function loadEinstellungen() {
 }
 
 function saveEinstellungen() {
-  // Collect unterrichtszeiten from DOM
   const slots = [...document.querySelectorAll('.time-slot')].map(s => ({
     bezeichnung: s.querySelector('[data-bez]').value.trim(),
     von: s.querySelector('[data-von]').value,
@@ -1108,7 +1107,17 @@ function saveEinstellungen() {
     bundesland: document.getElementById('set-bundesland').value,
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
-  showToast('Einstellungen gespeichert ✓', 'success');
+}
+
+let _autoSaveTimer = null;
+function autoSave() {
+  clearTimeout(_autoSaveTimer);
+  const ind = document.getElementById('autosave-indicator');
+  if (ind) ind.textContent = '💾 wird gespeichert…';
+  _autoSaveTimer = setTimeout(() => {
+    saveEinstellungen();
+    if (ind) { ind.textContent = '✓ gespeichert'; setTimeout(() => ind.textContent = '', 2000); }
+  }, 600);
 }
 
 function renderUnterrichtszeiten() {
@@ -1123,11 +1132,11 @@ function makeTimeSlot(bez = '', von = '', bis = '', idx) {
   const div = document.createElement('div');
   div.className = 'time-slot';
   div.innerHTML = `
-    <input class="form-input" type="text" placeholder="z.B. 1. Stunde" value="${bez}" data-bez style="max-width:140px;">
-    <input class="form-input" type="time" value="${von}" data-von style="max-width:110px;">
+    <input class="form-input" type="text" placeholder="z.B. 1. Stunde" value="${bez}" data-bez style="max-width:140px;" oninput="autoSave()">
+    <input class="form-input" type="time" value="${von}" data-von style="max-width:110px;" onchange="autoSave()">
     <span style="color:var(--gray-400);">–</span>
-    <input class="form-input" type="time" value="${bis}" data-bis style="max-width:110px;">
-    <button onclick="removeTimeSlot(this)" title="Entfernen">🗑</button>
+    <input class="form-input" type="time" value="${bis}" data-bis style="max-width:110px;" onchange="autoSave()">
+    <button onclick="removeTimeSlot(this); autoSave();" title="Entfernen">🗑</button>
   `;
   return div;
 }
@@ -1135,6 +1144,7 @@ function makeTimeSlot(bez = '', von = '', bis = '', idx) {
 function addUnterrichtsstunde() {
   const container = document.getElementById('unterrichtszeiten-list');
   container.appendChild(makeTimeSlot('', '', ''));
+  autoSave();
 }
 
 function removeTimeSlot(btn) {
