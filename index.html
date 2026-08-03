@@ -347,6 +347,21 @@
     }
     .badge-active { background: var(--green-light); color: var(--green-dark); }
     .badge-wip { background: #fef3c7; color: #92400e; }
+
+    /* Einstellungen */
+    .settings-section { background: white; border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; margin-bottom: 20px; }
+    .settings-section-title { font-size: 1rem; font-weight: 700; color: var(--gray-800); margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--gray-200); }
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 600px) { .settings-grid { grid-template-columns: 1fr; } }
+    .time-slot { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .time-slot input { flex: 1; }
+    .time-slot button { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--gray-400); padding: 0 4px; }
+    .ferien-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 12px; }
+    .ferien-table th { text-align: left; padding: 8px 10px; background: var(--gray-100); color: var(--gray-600); font-weight: 600; }
+    .ferien-table td { padding: 8px 10px; border-bottom: 1px solid var(--gray-100); }
+    .ferien-table tr:last-child td { border-bottom: none; }
+    .ferien-loading { color: var(--gray-400); font-size: 0.9rem; margin-top: 12px; }
+    .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -363,6 +378,9 @@
     </button>
     <button class="nav-item" onclick="showPage('schueler')">
       <span class="nav-icon">👤</span> Schüler
+    </button>
+    <button class="nav-item" onclick="showPage('einstellungen')">
+      <span class="nav-icon">⚙️</span> Einstellungen
     </button>
   </nav>
 </div>
@@ -412,6 +430,14 @@
         <div class="module-desc">Noten erfassen, berechnen und Notenübersichten für alle Klassen erstellen.</div>
         <span class="module-badge badge-wip">⏳ In Bearbeitung</span>
       </div>
+
+      <!-- Einstellungen – aktiv -->
+      <div class="module-card active" onclick="showPage('einstellungen')">
+        <div class="module-icon">⚙️</div>
+        <div class="module-title">Einstellungen</div>
+        <div class="module-desc">Lehrername, Schulname, Schuljahr, Unterrichtszeiten und Bundesland konfigurieren.</div>
+        <span class="module-badge badge-active">✓ Verfügbar</span>
+      </div>
     </div>
 
   </div>
@@ -447,6 +473,72 @@
     <div id="schueler-list"></div>
   </div>
 
+  <!-- EINSTELLUNGEN -->
+  <div id="page-einstellungen" class="hidden">
+    <div class="page-header">
+      <div class="page-title">Einstellungen</div>
+      <button class="btn btn-primary btn-sm" onclick="saveEinstellungen()">💾 Speichern</button>
+    </div>
+
+    <!-- Allgemeine Daten -->
+    <div class="settings-section">
+      <div class="settings-section-title">Allgemeine Angaben</div>
+      <div class="settings-grid">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Lehrername</label>
+          <input class="form-input" id="set-lehrername" type="text" placeholder="z.B. Max Mustermann">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Schulname</label>
+          <input class="form-input" id="set-schulname" type="text" placeholder="z.B. Realschule Musterstadt">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Schuladresse</label>
+          <input class="form-input" id="set-schuladresse" type="text" placeholder="z.B. Musterstraße 1, 12345 Musterstadt">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Schuljahr</label>
+          <input class="form-input" id="set-schuljahr" type="text" placeholder="z.B. 2025/2026">
+        </div>
+      </div>
+    </div>
+
+    <!-- Unterrichtszeiten -->
+    <div class="settings-section">
+      <div class="settings-section-title">Unterrichtszeiten</div>
+      <div id="unterrichtszeiten-list"></div>
+      <button class="btn btn-secondary btn-sm" onclick="addUnterrichtsstunde()" style="margin-top:8px;">＋ Stunde hinzufügen</button>
+    </div>
+
+    <!-- Bundesland & Ferien -->
+    <div class="settings-section">
+      <div class="settings-section-title">Bundesland &amp; Schulferien</div>
+      <div class="form-group">
+        <label class="form-label">Bundesland</label>
+        <select class="form-select" id="set-bundesland" onchange="onBundeslandChange()">
+          <option value="">– bitte wählen –</option>
+          <option value="BB">Brandenburg</option>
+          <option value="BE">Berlin</option>
+          <option value="BW">Baden-Württemberg</option>
+          <option value="BY">Bayern</option>
+          <option value="HB">Bremen</option>
+          <option value="HE">Hessen</option>
+          <option value="HH">Hamburg</option>
+          <option value="MV">Mecklenburg-Vorpommern</option>
+          <option value="NI">Niedersachsen</option>
+          <option value="NW">Nordrhein-Westfalen</option>
+          <option value="RP">Rheinland-Pfalz</option>
+          <option value="SH">Schleswig-Holstein</option>
+          <option value="SL">Saarland</option>
+          <option value="SN">Sachsen</option>
+          <option value="ST">Sachsen-Anhalt</option>
+          <option value="TH">Thüringen</option>
+        </select>
+      </div>
+      <div id="ferien-container"></div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Bottom nav (Mobile) -->
@@ -460,6 +552,9 @@
     </button>
     <button class="bottom-nav-item" onclick="showPage('schueler')">
       <span class="bottom-nav-icon">👤</span>Schüler
+    </button>
+    <button class="bottom-nav-item" onclick="showPage('einstellungen')">
+      <span class="bottom-nav-icon">⚙️</span>Einstellungen
     </button>
   </div>
 </div>
@@ -593,17 +688,18 @@ let editingSchuelerId = null;
 let currentDetailId = null;
 
 // ── Navigation ──
+const ALL_PAGES = ['dashboard','klassen','schueler','einstellungen'];
 function showPage(page) {
-  ['dashboard','klassen','schueler'].forEach(p => {
+  ALL_PAGES.forEach(p => {
     document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
   });
   document.querySelectorAll('.nav-item, .bottom-nav-item').forEach((el, i) => {
-    const pages = ['dashboard','klassen','schueler'];
-    el.classList.toggle('active', pages[i % 3] === page);
+    el.classList.toggle('active', ALL_PAGES[i % ALL_PAGES.length] === page);
   });
   if (page === 'klassen') loadKlassen();
   if (page === 'schueler') loadSchueler();
   if (page === 'dashboard') loadStats();
+  if (page === 'einstellungen') loadEinstellungen();
 }
 
 // ── Toast ──
@@ -620,14 +716,7 @@ function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
 // ── Stats ──
 async function loadStats() {
-  const [{ count: k }, { count: s }, { count: m }] = await Promise.all([
-    sb.from('klassen').select('*', { count: 'exact', head: true }),
-    sb.from('schueler').select('*', { count: 'exact', head: true }),
-    sb.from('schueler').select('*', { count: 'exact', head: true }).eq('geschlecht', 'w'),
-  ]);
-  document.getElementById('stat-klassen').textContent = k ?? 0;
-  document.getElementById('stat-schueler').textContent = s ?? 0;
-  document.getElementById('stat-maedchen').textContent = m ?? 0;
+  // Stats-Karten wurden entfernt; Funktion bleibt als Platzhalter
 }
 
 // ── KLASSEN ──
@@ -981,6 +1070,120 @@ async function deleteSchueler(id, name) {
   closeModal('modal-detail');
   showToast('Schüler gelöscht.', 'success');
   loadSchueler(); loadStats();
+}
+
+// ── EINSTELLUNGEN ──
+const SETTINGS_KEY = 'kf_einstellungen';
+let unterrichtsstunden = [];
+
+function loadEinstellungen() {
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+  document.getElementById('set-lehrername').value = saved.lehrername || '';
+  document.getElementById('set-schulname').value = saved.schulname || '';
+  document.getElementById('set-schuladresse').value = saved.schuladresse || '';
+  document.getElementById('set-schuljahr').value = saved.schuljahr || '';
+
+  unterrichtsstunden = saved.unterrichtszeiten || [];
+  renderUnterrichtszeiten();
+
+  const bl = saved.bundesland || '';
+  document.getElementById('set-bundesland').value = bl;
+  if (bl) loadFerien(bl);
+}
+
+function saveEinstellungen() {
+  // Collect unterrichtszeiten from DOM
+  const slots = [...document.querySelectorAll('.time-slot')].map(s => ({
+    bezeichnung: s.querySelector('[data-bez]').value.trim(),
+    von: s.querySelector('[data-von]').value,
+    bis: s.querySelector('[data-bis]').value,
+  })).filter(s => s.von || s.bis);
+
+  const data = {
+    lehrername: document.getElementById('set-lehrername').value.trim(),
+    schulname: document.getElementById('set-schulname').value.trim(),
+    schuladresse: document.getElementById('set-schuladresse').value.trim(),
+    schuljahr: document.getElementById('set-schuljahr').value.trim(),
+    unterrichtszeiten: slots,
+    bundesland: document.getElementById('set-bundesland').value,
+  };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
+  showToast('Einstellungen gespeichert ✓', 'success');
+}
+
+function renderUnterrichtszeiten() {
+  const container = document.getElementById('unterrichtszeiten-list');
+  container.innerHTML = '';
+  unterrichtsstunden.forEach((s, i) => {
+    container.appendChild(makeTimeSlot(s.bezeichnung, s.von, s.bis, i));
+  });
+}
+
+function makeTimeSlot(bez = '', von = '', bis = '', idx) {
+  const div = document.createElement('div');
+  div.className = 'time-slot';
+  div.innerHTML = `
+    <input class="form-input" type="text" placeholder="z.B. 1. Stunde" value="${bez}" data-bez style="max-width:140px;">
+    <input class="form-input" type="time" value="${von}" data-von style="max-width:110px;">
+    <span style="color:var(--gray-400);">–</span>
+    <input class="form-input" type="time" value="${bis}" data-bis style="max-width:110px;">
+    <button onclick="removeTimeSlot(this)" title="Entfernen">🗑</button>
+  `;
+  return div;
+}
+
+function addUnterrichtsstunde() {
+  const container = document.getElementById('unterrichtszeiten-list');
+  container.appendChild(makeTimeSlot('', '', ''));
+}
+
+function removeTimeSlot(btn) {
+  btn.closest('.time-slot').remove();
+}
+
+function onBundeslandChange() {
+  const bl = document.getElementById('set-bundesland').value;
+  if (bl) loadFerien(bl);
+  else document.getElementById('ferien-container').innerHTML = '';
+}
+
+async function loadFerien(bundesland) {
+  const container = document.getElementById('ferien-container');
+  container.innerHTML = '<div class="ferien-loading">Ferien werden geladen…</div>';
+
+  // Determine current school year range
+  const now = new Date();
+  const year = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  const validFrom = `${year}-08-01`;
+  const validTo = `${year + 1}-07-31`;
+
+  try {
+    const url = `https://openholidaysapi.org/SchoolHolidays?countryIsoCode=DE&languageIsoCode=DE&validFrom=${validFrom}&validTo=${validTo}&subdivisionCode=DE-${bundesland}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const ferien = await res.json();
+
+    if (!ferien || ferien.length === 0) {
+      container.innerHTML = '<div class="ferien-loading">Keine Ferienzeiten gefunden.</div>';
+      return;
+    }
+
+    const rows = ferien.map(f => {
+      const name = f.name?.find(n => n.language === 'DE')?.text || f.name?.[0]?.text || '–';
+      const von = new Date(f.startDate).toLocaleDateString('de-DE');
+      const bis = new Date(f.endDate).toLocaleDateString('de-DE');
+      return `<tr><td>${name}</td><td>${von}</td><td>${bis}</td></tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <table class="ferien-table">
+        <thead><tr><th>Ferienzeitraum</th><th>Beginn</th><th>Ende</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="ferien-loading" style="color:#ef4444;">Fehler beim Laden der Ferien: ${e.message}</div>`;
+  }
 }
 
 // ── Init ──
