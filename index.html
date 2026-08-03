@@ -435,9 +435,14 @@
       <div class="page-title">Schüler</div>
       <button class="btn btn-primary" onclick="openSchuelerForm()">＋ Neuer Schüler</button>
     </div>
-    <div class="search-bar">
-      <span class="search-icon">🔍</span>
-      <input class="search-input" type="text" placeholder="Schüler suchen…" oninput="filterSchueler(this.value)">
+    <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
+      <div class="search-bar" style="flex:1; min-width:180px; margin-bottom:0;">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="schueler-search" type="text" placeholder="Schüler suchen…" oninput="applySchuelerFilter()">
+      </div>
+      <select class="form-select" id="klassen-filter" onchange="applySchuelerFilter()" style="width:auto; min-width:140px;">
+        <option value="">Alle Klassen</option>
+      </select>
     </div>
     <div id="schueler-list"></div>
   </div>
@@ -720,7 +725,31 @@ async function deleteKlasse(id, name) {
 async function loadSchueler() {
   const { data } = await sb.from('schueler').select('*, klassen(name, schuljahr)').order('nachname');
   allSchueler = data || [];
-  renderSchueler(allSchueler);
+  // Klassen-Filter befüllen
+  const filterEl = document.getElementById('klassen-filter');
+  if (filterEl) {
+    const currentVal = filterEl.value;
+    const klassen = [...new Map(allSchueler
+      .filter(s => s.klassen)
+      .map(s => [s.klasse_id, s.klassen.name])
+    ).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    filterEl.innerHTML = '<option value="">Alle Klassen</option>' +
+      klassen.map(([id, name]) => `<option value="${id}" ${id === currentVal ? 'selected' : ''}>${name}</option>`).join('');
+  }
+  applySchuelerFilter();
+}
+
+function applySchuelerFilter() {
+  const q = (document.getElementById('schueler-search')?.value || '').toLowerCase();
+  const klasseId = document.getElementById('klassen-filter')?.value || '';
+  let list = allSchueler;
+  if (klasseId) list = list.filter(s => s.klasse_id === klasseId);
+  if (q) list = list.filter(s =>
+    s.nachname.toLowerCase().includes(q) ||
+    s.vorname.toLowerCase().includes(q) ||
+    (s.klassen?.name || '').toLowerCase().includes(q)
+  );
+  renderSchueler(list);
 }
 
 function renderSchueler(list) {
@@ -747,6 +776,9 @@ function renderSchueler(list) {
 }
 
 function filterSchueler(q) {
+  applySchuelerFilter();
+}
+function filterSchueler_old(q) {
   q = q.toLowerCase();
   renderSchueler(allSchueler.filter(s =>
     s.nachname.toLowerCase().includes(q) ||
