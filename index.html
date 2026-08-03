@@ -353,7 +353,7 @@
     .settings-section-title { font-size: 1rem; font-weight: 700; color: var(--gray-800); margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--gray-200); }
     .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     @media (max-width: 600px) { .settings-grid { grid-template-columns: 1fr; } }
-    .time-slot { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .time-slot, .freier-tag-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
     .time-slot input { flex: 1; }
     .time-slot button { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--gray-400); padding: 0 4px; }
     .ferien-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 12px; }
@@ -536,6 +536,14 @@
         </select>
       </div>
       <div id="ferien-container"></div>
+    </div>
+
+    <!-- Unterrichtsfreie Tage -->
+    <div class="settings-section">
+      <div class="settings-section-title">Unterrichtsfreie Tage</div>
+      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">Bewegliche Ferientage, pädagogische Tage, Ausflüge o.ä.</p>
+      <div id="freie-tage-list"></div>
+      <button class="btn btn-secondary btn-sm" onclick="addFreierTag()" style="margin-top:8px;">＋ Tag hinzufügen</button>
     </div>
   </div>
 
@@ -1089,6 +1097,8 @@ function loadEinstellungen() {
   const bl = saved.bundesland || '';
   document.getElementById('set-bundesland').value = bl;
   if (bl) loadFerien(bl);
+
+  renderFreieTage(saved.freieTage || []);
 }
 
 function saveEinstellungen() {
@@ -1098,6 +1108,11 @@ function saveEinstellungen() {
     bis: s.querySelector('[data-bis]').value,
   })).filter(s => s.von || s.bis);
 
+  const freieTage = [...document.querySelectorAll('.freier-tag-row')].map(r => ({
+    bezeichnung: r.querySelector('[data-ft-bez]').value.trim(),
+    datum: r.querySelector('[data-ft-datum]').value,
+  })).filter(t => t.bezeichnung || t.datum);
+
   const data = {
     lehrername: document.getElementById('set-lehrername').value.trim(),
     schulname: document.getElementById('set-schulname').value.trim(),
@@ -1105,6 +1120,7 @@ function saveEinstellungen() {
     schuljahr: document.getElementById('set-schuljahr').value.trim(),
     unterrichtszeiten: slots,
     bundesland: document.getElementById('set-bundesland').value,
+    freieTage,
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
 }
@@ -1149,6 +1165,29 @@ function addUnterrichtsstunde() {
 
 function removeTimeSlot(btn) {
   btn.closest('.time-slot').remove();
+}
+
+// ── Unterrichtsfreie Tage ──
+function renderFreieTage(liste) {
+  const container = document.getElementById('freie-tage-list');
+  container.innerHTML = '';
+  (liste || []).forEach(t => container.appendChild(makeFreierTagRow(t.bezeichnung, t.datum)));
+}
+
+function makeFreierTagRow(bez = '', datum = '') {
+  const div = document.createElement('div');
+  div.className = 'freier-tag-row';
+  div.innerHTML = `
+    <input class="form-input" type="text" placeholder="z.B. Beweglicher Ferientag" value="${bez}" data-ft-bez style="flex:2;" oninput="autoSave()">
+    <input class="form-input" type="date" value="${datum}" data-ft-datum style="flex:1;" onchange="autoSave()">
+    <button onclick="this.closest('.freier-tag-row').remove(); autoSave();" title="Entfernen">🗑</button>
+  `;
+  return div;
+}
+
+function addFreierTag() {
+  document.getElementById('freie-tage-list').appendChild(makeFreierTagRow());
+  autoSave();
 }
 
 function onBundeslandChange() {
