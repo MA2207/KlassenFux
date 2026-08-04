@@ -1720,7 +1720,12 @@ function renderUpWoche() {
     for (let tagNr = 1; tagNr <= 5; tagNr++) {
       const sp = upSpDaten[`${tagNr}-${stunde}`];
       const plan = upPlanDaten[`${tagNr}-${stunde}`] || {};
-      const klasseObj = sp?.klasse_id ? upAllKlassen.find(k => k.id === sp.klasse_id) : null;
+
+      // Effektive Werte mit Override
+      const effFach = ('fach' in plan) ? (plan.fach ?? '') : (sp?.fach || '');
+      const effKlasseId = ('klasse_id' in plan) ? (plan.klasse_id ?? '') : (sp?.klasse_id || '');
+      const klasseObj = effKlasseId ? upAllKlassen.find(k => k.id === effKlasseId) : null;
+      const istAbgeaendert = ('fach' in plan && plan.fach !== sp?.fach) || ('klasse_id' in plan && plan.klasse_id !== sp?.klasse_id);
 
       if (!sp) {
         html += `<td style="background:var(--gray-50);border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-200);"></td>`;
@@ -1733,8 +1738,9 @@ function renderUpWoche() {
         const dotColor = klasseObj?.farbe || '#d1d5db';
         html += `<td style="background:${cellBg};border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-200);padding:5px 6px;vertical-align:top;cursor:pointer;" onclick="upZurTagAnsicht(${tagNr},${stunde},event)">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin-bottom:3px;pointer-events:none;">
-            ${sp.fach ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;background:var(--green-light);color:var(--green-dark);">${sp.fach}</span>` : ''}
+            ${effFach ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;background:var(--green-light);color:var(--green-dark);">${effFach}</span>` : ''}
             ${klasseObj ? `<span style="font-size:9px;color:var(--gray-500);white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:${dotColor};display:inline-block;margin-right:2px;vertical-align:middle;"></span>${klasseObj.name}</span>` : ''}
+            ${istAbgeaendert ? `<span style="font-size:8px;color:#f59e0b;" title="Abgeändert">✏</span>` : ''}
           </div>
           <textarea
             style="width:100%;border:none;background:transparent;font-size:11px;color:var(--gray-800);font-family:inherit;resize:none;outline:none;padding:0;line-height:1.4;min-height:32px;"
@@ -1814,12 +1820,17 @@ function renderUpTag(tagNr) {
     const { stunde, label, isLZ } = row;
     const sp = upSpDaten[`${tagNr}-${stunde}`] || {};
     const plan = upPlanDaten[`${tagNr}-${stunde}`] || {};
-    const klasseObj = sp.klasse_id ? upAllKlassen.find(k => k.id === sp.klasse_id) : null;
     const zeitIdx = SP_STUNDEN.findIndex(s => s.stunde === stunde);
     const zeit = upZeitLabel(zeitIdx);
     const isLast = idx === stundenAmTag.length - 1;
-    const dotColor = klasseObj?.farbe || '#d1d5db';
-    const dotStyle = `width:9px;height:9px;border-radius:50%;background:${dotColor};display:inline-block;margin-right:5px;vertical-align:middle;`;
+
+    // Effektive Werte: Plan-Override hat Vorrang vor Stundenplan
+    const effFach = ('fach' in plan) ? (plan.fach ?? '') : (sp.fach || '');
+    const effKlasseId = ('klasse_id' in plan) ? (plan.klasse_id ?? '') : (sp.klasse_id || '');
+    const effKlasseObj = effKlasseId ? upAllKlassen.find(k => k.id === effKlasseId) : null;
+    const fachGeaendert = ('fach' in plan) && plan.fach !== sp.fach;
+    const klasseGeaendert = ('klasse_id' in plan) && plan.klasse_id !== sp.klasse_id;
+    const dotColor = effKlasseObj?.farbe || '#d1d5db';
 
     const tagStyle = `display:flex;align-items:stretch;border:1px solid var(--gray-200);border-radius:4px;overflow:hidden;margin-bottom:4px;`;
     const tagLabelStyle = (bg, color) => `flex:0 0 38px;width:38px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;background:${bg};color:${color};border-right:1px solid var(--gray-200);letter-spacing:.03em;text-transform:uppercase;`;
@@ -1829,12 +1840,24 @@ function renderUpTag(tagNr) {
     html += `
       <div style="display:flex;width:100%;box-sizing:border-box;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}">
         <div style="flex:0 0 ${leftW};width:${leftW};min-width:0;padding:10px 12px;border-right:1px solid var(--gray-200);display:flex;flex-direction:column;gap:5px;justify-content:center;">
-          <div>
-            <span style="font-weight:600;font-size:0.9rem;${isLZ ? 'color:var(--gray-400);' : ''}">${label} Stunde</span><br>
+          <div style="display:flex;align-items:baseline;gap:4px;">
+            <span style="font-weight:600;font-size:0.9rem;${isLZ ? 'color:var(--gray-400);' : ''}">${label}</span>
             <span style="font-size:10px;color:var(--gray-400);">${zeit}</span>
           </div>
-          ${sp.fach ? `<span style="display:inline-block;padding:2px 6px;border-radius:20px;font-size:10px;font-weight:500;background:var(--green-light);color:var(--green-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sp.fach}</span>` : ''}
-          ${klasseObj ? `<div style="font-size:11px;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="${dotStyle}"></span>${klasseObj.name}</div>` : ''}
+          <input type="text"
+            value="${effFach.replace(/"/g, '&quot;')}"
+            placeholder="Fach"
+            style="padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;background:var(--green-light);color:var(--green-dark);width:100%;box-sizing:border-box;outline:none;border:${fachGeaendert ? '1.5px solid #f59e0b' : '1.5px solid transparent'};"
+            oninput="upAutoSave(${tagNr},${stunde},'fach',this.value)"
+            title="Fach für diesen Tag (leer = Stundenplan)">
+          <select
+            style="padding:2px 4px;border-radius:6px;font-size:10px;color:var(--gray-700);background:var(--white);width:100%;box-sizing:border-box;outline:none;cursor:pointer;border:${klasseGeaendert ? '1.5px solid #f59e0b' : '1px solid var(--gray-200)'};"
+            onchange="upAutoSave(${tagNr},${stunde},'klasse_id',this.value)"
+            title="Klasse für diesen Tag (leer = Stundenplan)">
+            <option value="">– Klasse –</option>
+            ${upAllKlassen.map(k => `<option value="${k.id}" ${effKlasseId===k.id?'selected':''}>${k.name}</option>`).join('')}
+          </select>
+          ${(fachGeaendert||klasseGeaendert) ? `<span style="font-size:9px;color:#f59e0b;font-weight:600;">✏ abgeändert</span>` : ''}
         </div>
         <div style="flex:1;min-width:0;padding:8px 10px;display:flex;flex-direction:column;gap:4px;${isLZ ? 'background:var(--gray-50);' : ''}">
           <div style="${tagStyle}">
@@ -1881,7 +1904,8 @@ async function upSaveZeile(tagNr, stunde) {
   const row = upPlanDaten[key];
   if (!row) return;
 
-  const { error } = await sb.from('unterrichtsplanung').upsert({
+  // Basis-Daten immer speichern
+  const upsertData = {
     wochentag: tagNr,
     stunde,
     kalenderwoche: upKW,
@@ -1889,7 +1913,13 @@ async function upSaveZeile(tagNr, stunde) {
     inhalt: row.inhalt || '',
     hausaufgaben: row.hausaufgaben || '',
     notiz: row.notiz || '',
-  }, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' });
+  };
+  // Fach/Klasse nur speichern wenn explizit geändert (null = zurücksetzen auf SP-Default)
+  if ('fach' in row) upsertData.fach = row.fach || null;
+  if ('klasse_id' in row) upsertData.klasse_id = row.klasse_id || null;
+
+  const { error } = await sb.from('unterrichtsplanung').upsert(
+    upsertData, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' });
 
   const ind = document.getElementById('up-save-ind');
   if (ind) {
