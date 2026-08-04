@@ -2225,13 +2225,19 @@ function getMondayOfWeek(kw, jahr) {
   return monday;
 }
 
-function upZuHeute() {
+async function upZuHeute() {
   const heute = new Date();
   const { kw, jahr } = getISOWeek(heute);
   upKW = kw;
   upJahr = jahr;
-  upAktivTag = heute.getDay() === 0 ? 1 : heute.getDay();
-  upLadeWoche();
+  const tagNr = heute.getDay() === 0 ? 5 : heute.getDay() > 5 ? 5 : heute.getDay();
+  upAktivTag = tagNr;
+  upAnsicht = 'tag';
+  await upLadeWoche();
+  const btnTag = document.getElementById('up-btn-tag');
+  const btnWoche = document.getElementById('up-btn-woche');
+  if (btnTag) { btnTag.style.background = 'var(--white)'; btnTag.style.fontWeight = '600'; btnTag.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'; btnTag.style.color = 'var(--gray-800)'; }
+  if (btnWoche) { btnWoche.style.background = 'transparent'; btnWoche.style.fontWeight = '400'; btnWoche.style.boxShadow = 'none'; btnWoche.style.color = 'var(--gray-500)'; }
 }
 
 function upZeigeLoeschDialog() {
