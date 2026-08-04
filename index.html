@@ -1759,14 +1759,13 @@ async function loadUnterrichtsplanung() {
 
   // Labels
   const monday = getMondayOfWeek(upKW, upJahr);
+  const mondayStr = monday.toISOString().split('T')[0];
   const friday = new Date(monday); friday.setUTCDate(monday.getUTCDate() + 4);
   document.getElementById('up-week-label').textContent = `KW ${upKW} · ${upJahr}`;
   const fmt = d => d.toLocaleDateString('de-DE', { day:'numeric', month:'long', timeZone:'UTC' });
   document.getElementById('up-week-dates').textContent = `${fmt(monday)} – ${fmt(friday)}`;
 
   // Daten laden
-  const monday = getMondayOfWeek(upKW, upJahr);
-  const mondayStr = monday.toISOString().split('T')[0];
 
   const [{ data: einst }, { data: klassen }, { data: versionen }, { data: planRows }] = await Promise.all([
     sb.from('einstellungen').select('daten').eq('id', 1).single(),
