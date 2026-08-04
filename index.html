@@ -494,6 +494,7 @@
       <label style="font-size:0.85rem;font-weight:600;color:var(--gray-600);white-space:nowrap;">Version:</label>
       <select id="sp-version-select" class="form-select" style="flex:1;min-width:180px;max-width:320px;" onchange="spWechselVersion(this.value)"></select>
       <button class="btn btn-secondary btn-sm" onclick="spNeueVersion()" style="white-space:nowrap;">＋ Neue Version</button>
+      <button class="btn btn-secondary btn-sm" onclick="spVersionKopieren()" title="Diese Version kopieren und abändern">⧉ Kopieren</button>
       <button class="btn btn-secondary btn-sm" onclick="spVersionBearbeiten()" title="Zeitraum/Name bearbeiten">✏ Zeitraum</button>
       <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:5px 10px;border-radius:8px;cursor:pointer;" onclick="spVersionLoeschen()" title="Version löschen">🗑</button>
     </div>
@@ -518,6 +519,9 @@
         <div class="modal-title" id="sp-version-modal-title">Neue Version</div>
         <button class="modal-close" onclick="closeModal('modal-sp-version')">✕</button>
       </div>
+      <div id="sp-version-kopie-hinweis" class="hidden" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:0.82rem;color:#15803d;margin-bottom:14px;">
+        ⧉ Alle Einträge der aktuellen Version werden übernommen. Du kannst danach einzelne Stunden ändern.
+      </div>
       <div class="form-group">
         <label class="form-label">Name</label>
         <input class="form-input" id="sp-version-name" placeholder="z.B. Stundenplan 2. Halbjahr">
@@ -532,7 +536,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-sp-version')">Abbrechen</button>
-        <button class="btn btn-primary" onclick="spVersionModalSave()">Speichern</button>
+        <button class="btn btn-primary" id="sp-version-modal-save-btn" onclick="spVersionModalSave()">Speichern</button>
       </div>
     </div>
   </div>
@@ -1632,6 +1636,21 @@ function spNeueVersion() {
   document.getElementById('sp-version-name').value = `Stundenplan ${spVersionen.length + 1}`;
   document.getElementById('sp-version-ab').value = '';
   document.getElementById('sp-version-bis').value = '';
+  document.getElementById('sp-version-kopie-hinweis').classList.add('hidden');
+  document.getElementById('sp-version-modal-save-btn').textContent = 'Speichern';
+  openModal('modal-sp-version');
+}
+
+function spVersionKopieren() {
+  if (!spAktivVersionId) return;
+  const aktiv = spVersionen.find(v => v.id === spAktivVersionId);
+  spVersionModalModus = 'kopie';
+  document.getElementById('sp-version-modal-title').textContent = 'Version kopieren';
+  document.getElementById('sp-version-name').value = (aktiv?.name || 'Stundenplan') + ' (Kopie)';
+  document.getElementById('sp-version-ab').value = '';
+  document.getElementById('sp-version-bis').value = '';
+  document.getElementById('sp-version-kopie-hinweis').classList.remove('hidden');
+  document.getElementById('sp-version-modal-save-btn').textContent = 'Kopieren & anlegen';
   openModal('modal-sp-version');
 }
 
@@ -1650,22 +1669,49 @@ async function spVersionModalSave() {
   const name = document.getElementById('sp-version-name').value.trim() || 'Stundenplan';
   const gueltig_ab = document.getElementById('sp-version-ab').value || null;
   const gueltig_bis = document.getElementById('sp-version-bis').value || null;
+  const btn = document.getElementById('sp-version-modal-save-btn');
 
   if (!gueltig_ab) { showToast('Bitte ein Startdatum eingeben.', 'error'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ …';
 
   if (spVersionModalModus === 'neu') {
     const { data, error } = await sb.from('stundenplan_versionen')
       .insert({ name, gueltig_ab, gueltig_bis }).select().single();
-    if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+    if (error) { showToast('Fehler: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Speichern'; return; }
     spAktivVersionId = data.id;
     showToast('Version angelegt ✓', 'success');
+
+  } else if (spVersionModalModus === 'kopie') {
+    // Neue Version anlegen
+    const { data: neueVersion, error: errV } = await sb.from('stundenplan_versionen')
+      .insert({ name, gueltig_ab, gueltig_bis }).select().single();
+    if (errV) { showToast('Fehler: ' + errV.message, 'error'); btn.disabled = false; btn.textContent = 'Kopieren & anlegen'; return; }
+
+    // Alle Einträge der aktuellen Version laden und kopieren
+    const { data: eintraege, error: errE } = await sb.from('stundenplan')
+      .select('wochentag, stunde, fach, klasse_id, raum')
+      .eq('version_id', spAktivVersionId);
+    if (errE) { showToast('Fehler beim Laden: ' + errE.message, 'error'); btn.disabled = false; btn.textContent = 'Kopieren & anlegen'; return; }
+
+    if (eintraege && eintraege.length > 0) {
+      const kopien = eintraege.map(e => ({ ...e, version_id: neueVersion.id }));
+      const { error: errI } = await sb.from('stundenplan').insert(kopien);
+      if (errI) { showToast('Fehler beim Kopieren: ' + errI.message, 'error'); btn.disabled = false; btn.textContent = 'Kopieren & anlegen'; return; }
+    }
+
+    spAktivVersionId = neueVersion.id;
+    showToast(`Version kopiert ✓ (${eintraege?.length || 0} Einträge übernommen)`, 'success');
+
   } else {
     const { error } = await sb.from('stundenplan_versionen')
       .update({ name, gueltig_ab, gueltig_bis }).eq('id', spAktivVersionId);
-    if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+    if (error) { showToast('Fehler: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Speichern'; return; }
     showToast('Version aktualisiert ✓', 'success');
   }
 
+  btn.disabled = false;
   closeModal('modal-sp-version');
   await loadStundenplan();
 }
