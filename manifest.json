@@ -4,7 +4,7 @@
   "description": "Notenverwaltung und Klassenorganisation",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#FF6B00",
+  "background_color": "#ffffff",
   "theme_color": "#FF6B00",
   "icons": [
     {
