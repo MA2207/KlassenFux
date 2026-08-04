@@ -1135,12 +1135,12 @@ function kdRenderCheckliste() {
         ${kdSpalten.map(s => `
           <th style="padding:4px 2px 6px;background:var(--gray-800);color:white;text-align:center;vertical-align:bottom;border-right:1px solid rgba(255,255,255,0.1);position:relative;" title="${s.bezeichnung}">
             <div style="display:flex;flex-direction:column;align-items:center;gap:1px;">
-              <div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:12px;font-weight:600;max-height:80px;overflow:hidden;white-space:nowrap;line-height:1.3;">${s.bezeichnung}</div>
-              ${s.datum ? `<div style="font-size:10px;opacity:0.65;font-weight:400;">${fmt(s.datum)}</div>` : ''}
+              <div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:12px;font-weight:600;max-height:80px;overflow:hidden;white-space:nowrap;line-height:1.3;cursor:pointer;border-radius:3px;padding:1px 2px;" title="Klicken zum Bearbeiten" onclick="kdEditSpalte('${s.id}','bezeichnung',this,'${s.bezeichnung.replace(/'/g,"\\'")}',event)">${s.bezeichnung}</div>
+              <div style="font-size:10px;opacity:0.65;font-weight:400;cursor:pointer;border-radius:3px;padding:1px 2px;" title="Datum bearbeiten" onclick="kdEditSpalte('${s.id}','datum',this,'${s.datum||''}',event)">${s.datum ? fmt(s.datum) : '＋'}</div>
               <div style="font-size:11px;opacity:0.55;">${s.typ === 'haken' ? '✓' : '#'}</div>
             </div>
             <button onclick="kdLoescheSpalte('${s.id}','${s.bezeichnung.replace(/'/g,"\\'")}',event)"
-              style="position:absolute;top:2px;right:1px;background:rgba(255,255,255,0.18);border:none;color:white;border-radius:3px;width:14px;height:14px;font-size:8px;cursor:pointer;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;">✕</button>
+              style="position:absolute;top:2px;right:1px;background:rgba(220,38,38,0.85);border:none;color:white;border-radius:3px;width:14px;height:14px;font-size:8px;cursor:pointer;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;">✕</button>
           </th>`).join('')}
       </tr></thead>
       <tbody>
@@ -1229,6 +1229,51 @@ async function kdLoescheSpalte(id, name, event) {
   await sb.from('checkliste_spalten').delete().eq('id', id);
   await kdLadeCheckliste();
   kdRenderCheckliste();
+}
+
+function kdEditSpalte(id, feld, el, aktuell, event) {
+  event.stopPropagation();
+  // Remove any existing edit inputs
+  document.querySelectorAll('.kd-edit-input').forEach(e => e.remove());
+
+  const isDatum = feld === 'datum';
+  const input = document.createElement('input');
+  input.className = 'kd-edit-input';
+  input.type = isDatum ? 'date' : 'text';
+  input.value = isDatum ? (aktuell || '') : aktuell;
+  Object.assign(input.style, {
+    position: 'absolute', zIndex: '999', background: 'white', color: '#1f2937',
+    border: '2px solid #e8621a', borderRadius: '6px', padding: '4px 6px',
+    fontSize: '12px', minWidth: isDatum ? '130px' : '100px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+  });
+
+  // Position near the element
+  const rect = el.getBoundingClientRect();
+  const container = document.querySelector('#kd-checkliste-container');
+  const cRect = container.getBoundingClientRect();
+  input.style.top = (rect.bottom - cRect.top + container.scrollTop + 4) + 'px';
+  input.style.left = Math.max(0, rect.left - cRect.left - 10) + 'px';
+  container.style.position = 'relative';
+  container.appendChild(input);
+  input.focus();
+  if (!isDatum) input.select();
+
+  async function speichern() {
+    const neuerWert = input.value.trim();
+    input.remove();
+    if (feld === 'bezeichnung' && !neuerWert) return;
+    const update = feld === 'datum' ? { datum: neuerWert || null } : { bezeichnung: neuerWert };
+    await sb.from('checkliste_spalten').update(update).eq('id', id);
+    await kdLadeCheckliste();
+    kdRenderCheckliste();
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') speichern();
+    if (e.key === 'Escape') input.remove();
+    e.stopPropagation();
+  });
+  input.addEventListener('blur', () => setTimeout(() => { if (document.contains(input)) speichern(); }, 150));
 }
 
 function openKlasseForm(id) {
