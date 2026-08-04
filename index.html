@@ -385,6 +385,10 @@
     .sp-raum::placeholder { color: var(--gray-300); }
     .sp-fach-sel { font-size: 0.85rem; font-weight: 700; border: none; border-bottom: 1px solid transparent; padding: 3px 4px; width: 100%; background: transparent; color: var(--gray-800); cursor: pointer; }
     .sp-fach-sel:focus { outline: none; border-bottom-color: var(--green); }
+    .sp-cell-frei { background: #bbf7d0 !important; }
+    .sp-cell-frei .sp-klasse, .sp-cell-frei .sp-raum { opacity: 0.4; pointer-events: none; }
+    .klasse-color-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+    .klasse-color-swatch { width:36px; height:36px; border-radius:8px; border:2px solid rgba(0,0,0,0.1); cursor:pointer; padding:2px; }
   </style>
 </head>
 <body>
@@ -555,6 +559,13 @@
       <div class="settings-section-title">Unterrichtszeiten</div>
       <div id="unterrichtszeiten-list"></div>
       <button class="btn btn-secondary btn-sm" onclick="addUnterrichtsstunde()" style="margin-top:8px;">＋ Stunde hinzufügen</button>
+    </div>
+
+    <!-- Klassenfarben -->
+    <div class="settings-section">
+      <div class="settings-section-title">Klassenfarben</div>
+      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">Jeder Klasse eine Farbe zuweisen — diese erscheint im Stundenplan.</p>
+      <div id="klassenfarben-list"></div>
     </div>
 
     <!-- Meine Fächer -->
@@ -1161,8 +1172,13 @@ function applyEinstellungen(saved) {
 }
 
 async function loadEinstellungen() {
-  const { data, error } = await sb.from('einstellungen').select('daten').eq('id', 1).single();
-  applyEinstellungen(data?.daten || {});
+  const [{ data: einst }, { data: klassen }] = await Promise.all([
+    sb.from('einstellungen').select('daten').eq('id', 1).single(),
+    sb.from('klassen').select('*').order('name'),
+  ]);
+  allKlassen = klassen || [];
+  applyEinstellungen(einst?.daten || {});
+  renderKlassenfarben();
 }
 
 async function saveEinstellungen() {
@@ -1281,6 +1297,36 @@ function addFach() {
   autoSave();
 }
 
+// ── Klassenfarben ──
+function renderKlassenfarben() {
+  const container = document.getElementById('klassenfarben-list');
+  if (!container) return;
+  if (!allKlassen.length) {
+    container.innerHTML = '<p style="color:var(--gray-400);font-size:0.85rem;">Keine Klassen vorhanden. Lege zuerst Klassen an.</p>';
+    return;
+  }
+  container.innerHTML = allKlassen.map(k => `
+    <div class="klasse-color-row">
+      <div style="width:10px;height:36px;border-radius:4px;background:${k.farbe || '#6ee7b7'};"></div>
+      <span style="font-weight:700;font-size:0.95rem;min-width:60px;">${k.name}</span>
+      <span style="font-size:0.8rem;color:var(--gray-400);">${k.schuljahr}</span>
+      <input type="color" class="klasse-color-swatch" value="${k.farbe || '#6ee7b7'}"
+        onchange="saveKlasseColor('${k.id}', this.value)">
+    </div>
+  `).join('');
+}
+
+async function saveKlasseColor(id, farbe) {
+  await sb.from('klassen').update({ farbe }).eq('id', id);
+  const k = allKlassen.find(k => k.id === id);
+  if (k) k.farbe = farbe;
+  renderKlassenfarben();
+  // Wenn Stundenplan gerade sichtbar, Farben live aktualisieren
+  if (!document.getElementById('page-stundenplan').classList.contains('hidden')) {
+    renderStundenplan();
+  }
+}
+
 function onBundeslandChange() {
   const bl = document.getElementById('set-bundesland').value;
   if (bl) loadFerien(bl);
@@ -1387,15 +1433,31 @@ function renderStundenplan() {
       const faecherOpts = faecher.map(f =>
         `<option value="${f}" ${e.fach === f ? 'selected' : ''}>${f}</option>`
       ).join('');
+      // Zellfarbe bestimmen
+      const isFrei = e.fach === 'Frei';
+      const klasseObj = e.klasse_id ? allKlassen.find(k => k.id === e.klasse_id) : null;
+      let cellBg = '';
+      if (isFrei) {
+        cellBg = 'background:#bbf7d0;';
+      } else if (klasseObj?.farbe) {
+        cellBg = `background:${klasseObj.farbe}55;`; // ~33% opacity
+      }
+
+      const faecherOpts2 = faecher.map(f =>
+        `<option value="${f}" ${e.fach === f ? 'selected' : ''}>${f}</option>`
+      ).join('');
+
       const faecherField = faecher.length > 0
         ? `<select class="sp-fach-sel" onchange="saveSpZelle(${tag},${stunde})">
-            <option value="">– Fach –</option>${faecherOpts}
+            <option value="">– Fach –</option>
+            <option value="Frei" ${isFrei ? 'selected' : ''}>✓ Frei</option>
+            ${faecherOpts2}
            </select>`
-        : `<input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach (in Einstellungen anlegen)'}" value="${e.fach || ''}"
+        : `<input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach'}" value="${e.fach || ''}"
             onchange="saveSpZelle(${tag},${stunde})">`;
 
-      html += `<td style="${lzStyle}">
-        <div class="sp-cell" data-tag="${tag}" data-st="${stunde}">
+      html += `<td style="${lzStyle}${cellBg}">
+        <div class="sp-cell${isFrei ? ' sp-cell-frei' : ''}" data-tag="${tag}" data-st="${stunde}">
           ${faecherField}
           <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
             <option value="">– Klasse –</option>${klassenOpts}
@@ -1428,6 +1490,22 @@ async function saveSpZelle(wochentag, stunde) {
   );
 
   spDaten[`${wochentag}-${stunde}`] = { wochentag, stunde, fach, klasse_id, raum };
+
+  // Zellfarbe sofort live aktualisieren
+  const td = cell.parentElement;
+  const isFrei = fach === 'Frei';
+  const klasseObj = klasse_id ? allKlassen.find(k => k.id === klasse_id) : null;
+  if (isFrei) {
+    td.style.background = '#bbf7d0';
+    cell.classList.add('sp-cell-frei');
+  } else if (klasseObj?.farbe) {
+    td.style.background = klasseObj.farbe + '55';
+    cell.classList.remove('sp-cell-frei');
+  } else {
+    td.style.background = '';
+    cell.classList.remove('sp-cell-frei');
+  }
+
   if (ind) {
     ind.textContent = error ? '❌ Fehler' : '✓ gespeichert';
     setTimeout(() => ind.textContent = '', 2000);
