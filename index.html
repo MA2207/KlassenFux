@@ -362,6 +362,27 @@
     .ferien-table tr:last-child td { border-bottom: none; }
     .ferien-loading { color: var(--gray-400); font-size: 0.9rem; margin-top: 12px; }
     .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+
+    /* Stundenplan */
+    .sp-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .sp-table { border-collapse: collapse; width: 100%; min-width: 720px; }
+    .sp-table thead th { background: var(--green); color: white; padding: 10px 8px; font-size: 0.85rem; font-weight: 600; text-align: center; position: sticky; top: 0; z-index: 1; }
+    .sp-table thead th.sp-time-col { background: var(--gray-100); color: var(--gray-500); }
+    .sp-table tbody tr:nth-child(even) { background: var(--gray-50); }
+    .sp-table tbody tr:nth-child(even) .sp-cell:focus-within { background: var(--green-light); }
+    .sp-time { padding: 8px 6px; font-size: 0.78rem; color: var(--gray-500); font-weight: 700; text-align: center; white-space: nowrap; min-width: 72px; border-right: 2px solid var(--gray-200); }
+    .sp-time-sub { font-weight: 400; font-size: 0.7rem; color: var(--gray-400); display: block; margin-top: 2px; }
+    .sp-table td { border: 1px solid var(--gray-200); padding: 3px; vertical-align: top; }
+    .sp-cell { display: flex; flex-direction: column; gap: 2px; padding: 4px; min-width: 120px; border-radius: 4px; transition: background 0.1s; }
+    .sp-cell:focus-within { background: var(--green-light); }
+    .sp-fach { font-size: 0.85rem; font-weight: 700; border: none; border-bottom: 1px solid transparent; padding: 3px 4px; width: 100%; background: transparent; color: var(--gray-800); }
+    .sp-fach:focus { outline: none; border-bottom-color: var(--green); }
+    .sp-fach::placeholder { font-weight: 400; color: var(--gray-300); font-size: 0.8rem; }
+    .sp-klasse { font-size: 0.75rem; border: none; padding: 2px 4px; background: transparent; color: var(--green-dark); width: 100%; cursor: pointer; }
+    .sp-klasse:focus { outline: none; }
+    .sp-raum { font-size: 0.72rem; border: none; padding: 2px 4px; background: transparent; color: var(--gray-400); width: 100%; }
+    .sp-raum:focus { outline: none; }
+    .sp-raum::placeholder { color: var(--gray-300); }
   </style>
 </head>
 <body>
@@ -372,6 +393,9 @@
   <nav class="sidebar-nav">
     <button class="nav-item active" onclick="showPage('dashboard')">
       <span class="nav-icon">🏠</span> Dashboard
+    </button>
+    <button class="nav-item" onclick="showPage('stundenplan')">
+      <span class="nav-icon">📅</span> Stundenplan
     </button>
     <button class="nav-item" onclick="showPage('klassen')">
       <span class="nav-icon">🏫</span> Klassen
@@ -399,6 +423,14 @@
       <div class="page-title">Dashboard</div>
     </div>
     <div class="module-grid">
+      <!-- Stundenplan – aktiv -->
+      <div class="module-card active" onclick="showPage('stundenplan')">
+        <div class="module-icon">📅</div>
+        <div class="module-title">Mein Stundenplan</div>
+        <div class="module-desc">Wochenstundenplan mit Fächern, Klassen und Räumen verwalten.</div>
+        <span class="module-badge badge-active">✓ Verfügbar</span>
+      </div>
+
       <!-- Schülerdaten – aktiv -->
       <div class="module-card active" onclick="showPage('schueler')">
         <div class="module-icon">👤</div>
@@ -440,6 +472,19 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- STUNDENPLAN -->
+  <div id="page-stundenplan" class="hidden">
+    <div class="page-header">
+      <div class="page-title">Mein Stundenplan</div>
+      <span id="sp-save-indicator" style="font-size:0.8rem; color:var(--gray-400); align-self:center;"></span>
+    </div>
+    <div class="settings-section" style="padding:16px;">
+      <div class="sp-wrapper">
+        <table class="sp-table" id="sp-table"></table>
+      </div>
+    </div>
   </div>
 
   <!-- KLASSEN -->
@@ -554,6 +599,9 @@
   <div class="bottom-nav-items">
     <button class="bottom-nav-item active" onclick="showPage('dashboard')">
       <span class="bottom-nav-icon">🏠</span>Dashboard
+    </button>
+    <button class="bottom-nav-item" onclick="showPage('stundenplan')">
+      <span class="bottom-nav-icon">📅</span>Stundenplan
     </button>
     <button class="bottom-nav-item" onclick="showPage('klassen')">
       <span class="bottom-nav-icon">🏫</span>Klassen
@@ -696,7 +744,7 @@ let editingSchuelerId = null;
 let currentDetailId = null;
 
 // ── Navigation ──
-const ALL_PAGES = ['dashboard','klassen','schueler','einstellungen'];
+const ALL_PAGES = ['dashboard','stundenplan','klassen','schueler','einstellungen'];
 function showPage(page) {
   ALL_PAGES.forEach(p => {
     document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
@@ -708,6 +756,7 @@ function showPage(page) {
   if (page === 'schueler') loadSchueler();
   if (page === 'dashboard') loadStats();
   if (page === 'einstellungen') loadEinstellungen();
+  if (page === 'stundenplan') loadStundenplan();
 }
 
 // ── Toast ──
@@ -1236,6 +1285,84 @@ async function loadFerien(bundesland) {
     `;
   } catch (e) {
     container.innerHTML = `<div class="ferien-loading" style="color:#ef4444;">Fehler beim Laden der Ferien: ${e.message}</div>`;
+  }
+}
+
+// ── STUNDENPLAN ──
+const SP_TAGE = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag'];
+let spDaten = {};
+let spEinstellungen = {};
+
+async function loadStundenplan() {
+  const [{ data: einst }, { data: klassen }, { data: plan }] = await Promise.all([
+    sb.from('einstellungen').select('daten').eq('id', 1).single(),
+    sb.from('klassen').select('id, name').order('name'),
+    sb.from('stundenplan').select('*'),
+  ]);
+
+  spEinstellungen = einst?.daten || {};
+  allKlassen = klassen || [];
+  spDaten = {};
+  (plan || []).forEach(r => { spDaten[`${r.wochentag}-${r.stunde}`] = r; });
+  renderStundenplan();
+}
+
+function spZeitLabel(stunde) {
+  const z = (spEinstellungen.unterrichtszeiten || [])[stunde - 1];
+  return (z && z.von && z.bis) ? `${z.von}–${z.bis}` : '';
+}
+
+function renderStundenplan() {
+  const klassenOpts = allKlassen.map(k => `<option value="${k.id}">${k.name}</option>`).join('');
+  let html = '<thead><tr><th class="sp-time-col">Stunde</th>';
+  SP_TAGE.forEach(t => html += `<th>${t}</th>`);
+  html += '</tr></thead><tbody>';
+
+  for (let st = 1; st <= 8; st++) {
+    const zeit = spZeitLabel(st);
+    html += `<tr>
+      <td class="sp-time">${st}.<span class="sp-time-sub">${zeit}</span></td>`;
+    for (let tag = 1; tag <= 5; tag++) {
+      const e = spDaten[`${tag}-${st}`] || {};
+      const opts = allKlassen.map(k =>
+        `<option value="${k.id}" ${e.klasse_id === k.id ? 'selected' : ''}>${k.name}</option>`
+      ).join('');
+      html += `<td>
+        <div class="sp-cell" data-tag="${tag}" data-st="${st}">
+          <input class="sp-fach" type="text" placeholder="Fach" value="${e.fach || ''}"
+            onchange="saveSpZelle(${tag},${st})">
+          <select class="sp-klasse" onchange="saveSpZelle(${tag},${st})">
+            <option value="">– Klasse –</option>${opts}
+          </select>
+          <input class="sp-raum" type="text" placeholder="Raum (optional)" value="${e.raum || ''}"
+            onchange="saveSpZelle(${tag},${st})">
+        </div>
+      </td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody>';
+  document.getElementById('sp-table').innerHTML = html;
+}
+
+async function saveSpZelle(wochentag, stunde) {
+  const cell = document.querySelector(`.sp-cell[data-tag="${wochentag}"][data-st="${stunde}"]`);
+  const fach = cell.querySelector('.sp-fach').value.trim();
+  const klasse_id = cell.querySelector('.sp-klasse').value || null;
+  const raum = cell.querySelector('.sp-raum').value.trim();
+
+  const ind = document.getElementById('sp-save-indicator');
+  if (ind) ind.textContent = '💾 …';
+
+  const { error } = await sb.from('stundenplan').upsert(
+    { wochentag, stunde, fach, klasse_id, raum },
+    { onConflict: 'wochentag,stunde' }
+  );
+
+  spDaten[`${wochentag}-${stunde}`] = { wochentag, stunde, fach, klasse_id, raum };
+  if (ind) {
+    ind.textContent = error ? '❌ Fehler' : '✓ gespeichert';
+    setTimeout(() => ind.textContent = '', 2000);
   }
 }
 
