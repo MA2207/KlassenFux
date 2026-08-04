@@ -2369,15 +2369,20 @@ function renderUpTabs() {
   tabsEl.style.display = 'flex';
   const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
   const monday = getMondayOfWeek(upKW, upJahr);
+  const heuteDateStr = new Date().toISOString().split('T')[0];
   tabsEl.innerHTML = tage.map((t, i) => {
     const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
     const tagNr = i + 1;
     const label = `${t}, ${d.getUTCDate()}.${d.getUTCMonth()+1}.`;
     const isActive = tagNr === upAktivTag;
+    const isHeute = d.toISOString().split('T')[0] === heuteDateStr;
+    const bg = isHeute ? '#dcfce7' : (isActive ? 'var(--white)' : 'var(--gray-50)');
+    const color = isHeute ? '#166534' : (isActive ? 'var(--gray-800)' : 'var(--gray-400)');
+    const border = isHeute ? '#86efac' : (isActive ? 'var(--gray-400)' : 'var(--gray-200)');
     return `<button onclick="upWechselTag(${tagNr})" style="
-      padding:5px 13px; border-radius:20px; font-size:12px; cursor:pointer; border: 1px solid ${isActive ? 'var(--gray-400)' : 'var(--gray-200)'};
-      background:${isActive ? 'var(--white)' : 'var(--gray-50)'}; color:${isActive ? 'var(--gray-800)' : 'var(--gray-400)'};
-      font-weight:${isActive ? '600' : '400'}; white-space:nowrap;">${label}</button>`;
+      padding:5px 13px; border-radius:20px; font-size:12px; cursor:pointer; border: 1px solid ${border};
+      background:${bg}; color:${color};
+      font-weight:${isActive || isHeute ? '600' : '400'}; white-space:nowrap;">${label}</button>`;
   }).join('');
 }
 
@@ -2445,8 +2450,9 @@ function renderUpWoche() {
           ${tage.map((t, i) => {
             const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
             const fi = tagFerienInfo[i];
-            const bg = fi.istFrei ? (fi.typ === 'ferien' ? '#1d4ed8' : '#92400e') : 'var(--gray-800)';
-            const label = fi.istFrei ? `<div style="font-size:9px;font-weight:400;opacity:0.85;margin-top:1px;">${fi.name}</div>` : '';
+            const isHeute = d.toISOString().split('T')[0] === new Date().toISOString().split('T')[0];
+            const bg = fi.istFrei ? (fi.typ === 'ferien' ? '#1d4ed8' : '#92400e') : (isHeute ? '#166534' : 'var(--gray-800)');
+            const label = fi.istFrei ? `<div style="font-size:9px;font-weight:400;opacity:0.85;margin-top:1px;">${fi.name}</div>` : (isHeute ? `<div style="font-size:9px;font-weight:400;opacity:0.85;margin-top:1px;">Heute</div>` : '');
             return `<th style="padding:8px 6px;background:${bg};color:white;font-size:11px;font-weight:600;text-align:center;border-right:1px solid rgba(255,255,255,0.15);">${t} ${d.getUTCDate()}.${d.getUTCMonth()+1}.${label}</th>`;
           }).join('')}
         </tr>
@@ -2579,10 +2585,15 @@ function renderUpTag(tagNr) {
   const isMobile = window.innerWidth <= 768;
   const leftW = isMobile ? '120px' : '150px';
 
+  const istHeute = tagDateStr === new Date().toISOString().split('T')[0];
+  const headerBg = istHeute ? '#dcfce7' : 'var(--gray-50)';
+  const headerBorder = istHeute ? '#86efac' : 'var(--gray-200)';
+  const headerColor = istHeute ? '#166534' : 'var(--gray-800)';
+
   let html = `
-    <div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;width:100%;box-sizing:border-box;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
-        <div style="font-weight:600;font-size:0.95rem;">${datumStr}</div>
+    <div style="background:var(--white);border-radius:12px;border:1px solid ${istHeute ? '#86efac' : 'var(--gray-200)'};overflow:hidden;width:100%;box-sizing:border-box;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:${headerBg};border-bottom:1px solid ${headerBorder};">
+        <div style="font-weight:600;font-size:0.95rem;color:${headerColor};">${datumStr}${istHeute ? ' <span style="font-size:11px;font-weight:500;background:#bbf7d0;color:#166534;padding:1px 7px;border-radius:10px;margin-left:6px;">Heute</span>' : ''}</div>
         <span id="up-save-ind" style="font-size:11px;color:var(--gray-400);"></span>
       </div>
       <div style="display:flex;border-bottom:1px solid var(--gray-200);background:var(--gray-50);">
