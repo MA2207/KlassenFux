@@ -541,6 +541,20 @@
     </div>
   </div>
 
+  <!-- KLASSE DETAIL -->
+  <div id="page-klasse-detail" class="hidden">
+    <div class="page-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button onclick="showPage('klassen')" style="padding:5px 12px;border-radius:8px;border:1px solid var(--gray-200);background:var(--white);color:var(--gray-700);cursor:pointer;font-size:13px;white-space:nowrap;">← Zurück</button>
+        <div class="page-title" id="kd-titel"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:3px;background:var(--gray-100);border-radius:9px;padding:3px;margin-bottom:16px;width:fit-content;">
+      <button data-kd-tab="checkliste" onclick="kdZeigeUnterseite('checkliste')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--white);color:var(--gray-800);box-shadow:0 1px 3px rgba(0,0,0,0.1);">✅ Checkliste</button>
+    </div>
+    <div id="kd-content"></div>
+  </div>
+
   <!-- KLASSEN -->
   <div id="page-klassen" class="hidden">
     <div class="page-header">
@@ -779,6 +793,39 @@
 
 </div>
 
+<!-- MODAL: Checkliste Spalte -->
+<div id="modal-checkliste-spalte" class="modal-overlay hidden">
+  <div class="modal" style="max-width:360px;">
+    <div class="modal-header">
+      <div class="modal-title">Neue Spalte</div>
+      <button class="modal-close" onclick="closeModal('modal-checkliste-spalte')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Bezeichnung *</label>
+      <input id="cks-bezeichnung" type="text" class="form-input" placeholder="z.B. Zeugnis, Elternbrief…">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Datum (optional)</label>
+      <input id="cks-datum" type="date" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Typ</label>
+      <div style="display:flex;gap:20px;margin-top:6px;">
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;">
+          <input type="radio" name="cks-typ" value="haken" checked style="accent-color:var(--green);width:16px;height:16px;"> ✓ Haken
+        </label>
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;">
+          <input type="radio" name="cks-typ" value="wert" style="accent-color:var(--green);width:16px;height:16px;"> 🔢 Wert
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-checkliste-spalte')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="kdSpeichereSpalte()">Hinzufügen</button>
+    </div>
+  </div>
+</div>
+
 <!-- Bottom nav (Mobile) -->
 <div class="bottom-nav">
   <div class="bottom-nav-items">
@@ -932,13 +979,15 @@ let editingSchuelerId = null;
 let currentDetailId = null;
 
 // ── Navigation ──
-const ALL_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen'];
+const ALL_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','klasse-detail'];
+const NAV_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen'];
 function showPage(page) {
   ALL_PAGES.forEach(p => {
     document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
   });
+  const navPage = page === 'klasse-detail' ? 'klassen' : page;
   document.querySelectorAll('.nav-item, .bottom-nav-item').forEach((el, i) => {
-    el.classList.toggle('active', ALL_PAGES[i % ALL_PAGES.length] === page);
+    el.classList.toggle('active', NAV_PAGES[i % NAV_PAGES.length] === navPage);
   });
   if (page === 'klassen') loadKlassen();
   if (page === 'schueler') loadSchueler();
@@ -983,12 +1032,12 @@ function renderKlassen(list) {
     return;
   }
   el.innerHTML = list.map(k => `
-    <div class="list-item">
+    <div class="list-item" style="cursor:pointer;" onclick="kdOeffneKlasse('${k.id}')">
       <div class="list-item-info">
         <div class="list-item-name">${k.name}</div>
         <div class="list-item-sub">Schuljahr ${k.schuljahr}</div>
       </div>
-      <div class="list-item-actions">
+      <div class="list-item-actions" onclick="event.stopPropagation()">
         <button class="btn btn-secondary btn-sm" onclick="editKlasse('${k.id}')">✏️</button>
         <button class="btn btn-danger btn-sm" onclick="deleteKlasse('${k.id}', '${k.name}')">🗑</button>
       </div>
@@ -1001,6 +1050,123 @@ function filterKlassen(q) {
     k.name.toLowerCase().includes(q.toLowerCase()) ||
     k.schuljahr.toLowerCase().includes(q.toLowerCase())
   ));
+}
+
+// ── KLASSE DETAIL / CHECKLISTE ──
+let kdAktiveKlasseId = null;
+let kdAktiveUnterseite = 'checkliste';
+let kdSchueler = [];
+let kdSpalten = [];
+let kdEintraege = {};
+
+async function kdOeffneKlasse(klasseId) {
+  const klasse = allKlassen.find(k => k.id === klasseId);
+  if (!klasse) return;
+  kdAktiveKlasseId = klasseId;
+  document.getElementById('kd-titel').textContent = klasse.name;
+  showPage('klasse-detail');
+  await kdLadeCheckliste();
+  kdZeigeUnterseite('checkliste');
+}
+
+function kdZeigeUnterseite(seite) {
+  kdAktiveUnterseite = seite;
+  document.querySelectorAll('[data-kd-tab]').forEach(btn => {
+    const isActive = btn.dataset.kdTab === seite;
+    btn.style.background = isActive ? 'var(--white)' : 'transparent';
+    btn.style.color = isActive ? 'var(--gray-800)' : 'var(--gray-500)';
+    btn.style.fontWeight = isActive ? '600' : '400';
+    btn.style.boxShadow = isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+  });
+  if (seite === 'checkliste') kdRenderCheckliste();
+}
+
+async function kdLadeCheckliste() {
+  const [{ data: schueler }, { data: spalten }] = await Promise.all([
+    sb.from('schueler').select('*').eq('klasse_id', kdAktiveKlasseId).order('nachname'),
+    sb.from('checkliste_spalten').select('*').eq('klasse_id', kdAktiveKlasseId).order('reihenfolge')
+  ]);
+  kdSchueler = schueler || [];
+  kdSpalten = spalten || [];
+  kdEintraege = {};
+  if (kdSpalten.length > 0) {
+    const { data: eintraege } = await sb.from('checkliste_eintraege')
+      .select('*').in('spalte_id', kdSpalten.map(s => s.id));
+    (eintraege || []).forEach(e => { kdEintraege[e.spalte_id + '_' + e.schueler_id] = e.wert; });
+  }
+}
+
+function kdRenderCheckliste() {
+  const container = document.getElementById('kd-content');
+  if (kdAktiveUnterseite !== 'checkliste') return;
+  if (kdSchueler.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-text">Keine Schüler in dieser Klasse.</div></div>';
+    return;
+  }
+  const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE', {day:'numeric',month:'numeric'}) : '';
+  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button onclick="kdOeffneSpalteModal()" class="btn btn-primary btn-sm">＋ Spalte</button></div>';
+  if (kdSpalten.length === 0) {
+    html += '<div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);padding:30px;text-align:center;color:var(--gray-400);"><div style="font-size:2rem;margin-bottom:8px;">📋</div><div>Noch keine Spalten. Füge eine Spalte hinzu.</div></div>';
+    container.innerHTML = html; return;
+  }
+  html += '<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);background:var(--white);"><table style="border-collapse:collapse;table-layout:fixed;"><colgroup><col style="width:120px;min-width:120px;">' + kdSpalten.map(() => '<col style="width:52px;min-width:52px;">').join('') + '</colgroup><thead><tr><th style="padding:8px;background:var(--gray-800);color:white;font-size:11px;text-align:left;position:sticky;left:0;z-index:2;border-right:1px solid rgba(255,255,255,0.15);">Schüler</th>' +
+    kdSpalten.map(s => '<th style="padding:4px 2px 6px;background:var(--gray-800);color:white;text-align:center;vertical-align:bottom;border-right:1px solid rgba(255,255,255,0.1);position:relative;" title="' + s.bezeichnung + '"><div style="display:flex;flex-direction:column;align-items:center;gap:1px;"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;font-weight:600;max-height:80px;overflow:hidden;white-space:nowrap;">' + s.bezeichnung + '</div>' + (s.datum ? '<div style="font-size:8px;opacity:0.65;font-weight:400;">' + fmt(s.datum) + '</div>' : '') + '<div style="font-size:9px;opacity:0.55;">' + (s.typ === 'haken' ? '✓' : '#') + '</div></div><button onclick="kdLoescheSpalte('' + s.id + '','' + s.bezeichnung.replace(/'/g,"\'") + '',event)" style="position:absolute;top:2px;right:1px;background:rgba(255,255,255,0.18);border:none;color:white;border-radius:3px;width:14px;height:14px;font-size:8px;cursor:pointer;line-height:1;padding:0;">✕</button></th>').join('') +
+    '</tr></thead><tbody>' +
+    kdSchueler.map((s, idx) => {
+      const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50)';
+      return '<tr><td style="padding:6px 8px;font-size:12px;border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-100);position:sticky;left:0;background:' + rowBg + ';z-index:1;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="font-weight:600;color:var(--gray-800);">' + s.nachname + '</span> <span style="color:var(--gray-500);font-size:11px;">' + s.vorname + '</span></td>' +
+        kdSpalten.map(sp => {
+          const wert = kdEintraege[sp.id + '_' + s.id] || '';
+          if (sp.typ === 'haken') {
+            const ok = wert === '1';
+            return '<td style="text-align:center;border-right:1px solid var(--gray-100);border-bottom:1px solid var(--gray-100);background:' + rowBg + ';cursor:pointer;user-select:none;" onclick="kdToggleHaken('' + sp.id + '','' + s.id + '')"><span style="font-size:17px;' + (ok ? 'color:#16a34a;' : 'color:var(--gray-200);') + '">' + (ok ? '✓' : '○') + '</span></td>';
+          } else {
+            const auffaellig = wert && wert !== '1';
+            return '<td style="text-align:center;border-right:1px solid var(--gray-100);border-bottom:1px solid var(--gray-100);' + (auffaellig ? 'background:#fef3c7;' : 'background:' + rowBg + ';') + '"><input type="text" value="' + wert.replace(/"/g,'&quot;') + '" style="width:44px;border:none;background:transparent;text-align:center;font-size:12px;font-weight:600;color:var(--gray-800);outline:none;padding:2px 0;" onchange="kdSetzeWert('' + sp.id + '','' + s.id + '',this.value)" onclick="this.select()"></td>';
+          }
+        }).join('') + '</tr>';
+    }).join('') + '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+async function kdToggleHaken(spalteId, schuelerId) {
+  const key = spalteId + '_' + schuelerId;
+  const neu = kdEintraege[key] === '1' ? '' : '1';
+  kdEintraege[key] = neu;
+  kdRenderCheckliste();
+  if (neu === '') { await sb.from('checkliste_eintraege').delete().eq('spalte_id', spalteId).eq('schueler_id', schuelerId); }
+  else { await sb.from('checkliste_eintraege').upsert({ spalte_id: spalteId, schueler_id: schuelerId, wert: neu }, { onConflict: 'spalte_id,schueler_id' }); }
+}
+
+async function kdSetzeWert(spalteId, schuelerId, wert) {
+  const key = spalteId + '_' + schuelerId;
+  kdEintraege[key] = wert;
+  kdRenderCheckliste();
+  if (wert === '') { await sb.from('checkliste_eintraege').delete().eq('spalte_id', spalteId).eq('schueler_id', schuelerId); }
+  else { await sb.from('checkliste_eintraege').upsert({ spalte_id: spalteId, schueler_id: schuelerId, wert }, { onConflict: 'spalte_id,schueler_id' }); }
+}
+
+function kdOeffneSpalteModal() {
+  document.getElementById('cks-bezeichnung').value = '';
+  document.getElementById('cks-datum').value = '';
+  document.querySelector('input[name="cks-typ"][value="haken"]').checked = true;
+  openModal('modal-checkliste-spalte');
+}
+
+async function kdSpeichereSpalte() {
+  const bezeichnung = document.getElementById('cks-bezeichnung').value.trim();
+  if (!bezeichnung) { showToast('Bitte eine Bezeichnung eingeben.', 'error'); return; }
+  const datum = document.getElementById('cks-datum').value || null;
+  const typ = document.querySelector('input[name="cks-typ"]:checked').value;
+  const { error } = await sb.from('checkliste_spalten').insert({ klasse_id: kdAktiveKlasseId, bezeichnung, datum, typ, reihenfolge: kdSpalten.length });
+  if (!error) { closeModal('modal-checkliste-spalte'); await kdLadeCheckliste(); kdRenderCheckliste(); }
+}
+
+async function kdLoescheSpalte(id, name, event) {
+  event.stopPropagation();
+  if (!confirm('Spalte "' + name + '" und alle Einträge löschen?')) return;
+  await sb.from('checkliste_spalten').delete().eq('id', id);
+  await kdLadeCheckliste(); kdRenderCheckliste();
 }
 
 function openKlasseForm(id) {
