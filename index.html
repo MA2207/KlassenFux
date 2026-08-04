@@ -621,6 +621,10 @@
   <div id="page-unterrichtsplanung" class="hidden">
     <div class="page-header">
       <div class="page-title">Planung</div>
+      <div style="display:flex;gap:3px;background:var(--gray-100);border-radius:9px;padding:3px;">
+        <button id="up-btn-tag" onclick="upWechselAnsicht('tag')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--white);color:var(--gray-800);box-shadow:0 1px 3px rgba(0,0,0,0.1);">Tagesansicht</button>
+        <button id="up-btn-woche" onclick="upWechselAnsicht('woche')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">Wochenansicht</button>
+      </div>
     </div>
 
     <!-- Wochennavigation -->
@@ -1553,6 +1557,7 @@ async function saveSpZelle(wochentag, stunde) {
 let upKW = null;        // aktuelle Kalenderwoche
 let upJahr = null;      // aktuelles Jahr
 let upAktivTag = 1;     // 1=Mo … 5=Fr
+let upAnsicht = 'tag';  // 'tag' oder 'woche'
 let upSpDaten = {};     // Stundenplan-Daten für die Woche
 let upPlanDaten = {};   // Unterrichtsplanung-Einträge { 'tag-stunde': row }
 let upAllKlassen = [];
@@ -1617,14 +1622,17 @@ async function loadUnterrichtsplanung() {
   (planRows || []).forEach(r => { upPlanDaten[`${r.wochentag}-${r.stunde}`] = r; });
 
   renderUpTabs();
-  renderUpTag(upAktivTag);
+  if (upAnsicht === 'woche') renderUpWoche();
+  else renderUpTag(upAktivTag);
 }
 
 function renderUpTabs() {
+  const tabsEl = document.getElementById('up-tabs');
+  if (upAnsicht === 'woche') { tabsEl.style.display = 'none'; return; }
+  tabsEl.style.display = 'flex';
   const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
   const monday = getMondayOfWeek(upKW, upJahr);
-  const tabs = document.getElementById('up-tabs');
-  tabs.innerHTML = tage.map((t, i) => {
+  tabsEl.innerHTML = tage.map((t, i) => {
     const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
     const tagNr = i + 1;
     const label = `${t}, ${d.getUTCDate()}.${d.getUTCMonth()+1}.`;
@@ -1640,6 +1648,124 @@ function upWechselTag(tagNr) {
   upAktivTag = tagNr;
   renderUpTabs();
   renderUpTag(tagNr);
+}
+
+function upWechselAnsicht(ansicht) {
+  upAnsicht = ansicht;
+  const btnTag = document.getElementById('up-btn-tag');
+  const btnWoche = document.getElementById('up-btn-woche');
+  if (btnTag) {
+    btnTag.style.fontWeight = ansicht === 'tag' ? '600' : '400';
+    btnTag.style.background = ansicht === 'tag' ? 'var(--white)' : 'transparent';
+    btnTag.style.color = ansicht === 'tag' ? 'var(--gray-800)' : 'var(--gray-500)';
+    btnTag.style.boxShadow = ansicht === 'tag' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+  }
+  if (btnWoche) {
+    btnWoche.style.fontWeight = ansicht === 'woche' ? '600' : '400';
+    btnWoche.style.background = ansicht === 'woche' ? 'var(--white)' : 'transparent';
+    btnWoche.style.color = ansicht === 'woche' ? 'var(--gray-800)' : 'var(--gray-500)';
+    btnWoche.style.boxShadow = ansicht === 'woche' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+  }
+  renderUpTabs();
+  if (ansicht === 'woche') renderUpWoche();
+  else renderUpTag(upAktivTag);
+}
+
+function renderUpWoche() {
+  const container = document.getElementById('up-day-content');
+  const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
+  const monday = getMondayOfWeek(upKW, upJahr);
+
+  // Alle Stunden ermitteln, die in dieser Woche irgendwo im SP stehen
+  const stundenInWoche = SP_STUNDEN.filter(s =>
+    [1,2,3,4,5].some(tag => upSpDaten[`${tag}-${s.stunde}`])
+  );
+
+  if (stundenInWoche.length === 0) {
+    container.innerHTML = `<div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;color:var(--gray-400);">
+      <div style="font-size:2rem;margin-bottom:8px;">📭</div>
+      <div>Keine Stundenplan-Einträge für diese Woche.</div>
+    </div>`;
+    return;
+  }
+
+  // Tabellenkopf
+  let html = `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);background:var(--white);">
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:480px;">
+      <colgroup>
+        <col style="width:52px">
+        ${tage.map(() => '<col>').join('')}
+      </colgroup>
+      <thead>
+        <tr>
+          <th style="padding:8px 4px;background:var(--gray-800);color:white;font-size:10px;font-weight:600;text-align:center;border-right:1px solid rgba(255,255,255,0.15);"></th>
+          ${tage.map((t, i) => {
+            const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
+            return `<th style="padding:8px 6px;background:var(--gray-800);color:white;font-size:11px;font-weight:600;text-align:center;border-right:1px solid rgba(255,255,255,0.15);">${t} ${d.getUTCDate()}.${d.getUTCMonth()+1}.</th>`;
+          }).join('')}
+        </tr>
+      </thead>
+      <tbody>`;
+
+  stundenInWoche.forEach(({ stunde, label, isLZ }) => {
+    const zeitIdx = SP_STUNDEN.findIndex(s => s.stunde === stunde);
+    const zeit = upZeitLabel(zeitIdx);
+
+    html += `<tr>
+      <td style="padding:5px 3px;text-align:center;background:${isLZ ? 'var(--gray-100)' : 'var(--gray-50)'};border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-200);vertical-align:middle;">
+        <div style="font-weight:700;font-size:11px;${isLZ ? 'color:var(--gray-400);font-style:italic;' : 'color:var(--gray-700);'}">${label}</div>
+        ${zeit ? `<div style="font-size:8px;color:var(--gray-400);margin-top:1px;">${zeit}</div>` : ''}
+      </td>`;
+
+    for (let tagNr = 1; tagNr <= 5; tagNr++) {
+      const sp = upSpDaten[`${tagNr}-${stunde}`];
+      const plan = upPlanDaten[`${tagNr}-${stunde}`] || {};
+      const klasseObj = sp?.klasse_id ? upAllKlassen.find(k => k.id === sp.klasse_id) : null;
+
+      if (!sp) {
+        html += `<td style="background:var(--gray-50);border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-200);"></td>`;
+      } else if (sp.ist_frei) {
+        html += `<td style="background:#f0fdf4;border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-200);text-align:center;vertical-align:middle;">
+          <span style="font-size:10px;color:#16a34a;font-weight:600;">✓ Frei</span>
+        </td>`;
+      } else {
+        const cellBg = klasseObj?.farbe ? hexToRgba(klasseObj.farbe, 0.15) : 'var(--white)';
+        const dotColor = klasseObj?.farbe || '#d1d5db';
+        html += `<td style="background:${cellBg};border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-200);padding:5px 6px;vertical-align:top;cursor:pointer;" onclick="upZurTagAnsicht(${tagNr},${stunde},event)">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin-bottom:3px;pointer-events:none;">
+            ${sp.fach ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;background:var(--green-light);color:var(--green-dark);">${sp.fach}</span>` : ''}
+            ${klasseObj ? `<span style="font-size:9px;color:var(--gray-500);white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:${dotColor};display:inline-block;margin-right:2px;vertical-align:middle;"></span>${klasseObj.name}</span>` : ''}
+          </div>
+          <textarea
+            style="width:100%;border:none;background:transparent;font-size:11px;color:var(--gray-800);font-family:inherit;resize:none;outline:none;padding:0;line-height:1.4;min-height:32px;"
+            rows="2"
+            placeholder="${isLZ ? 'LZ…' : 'Inhalt…'}"
+            oninput="upAutoSave(${tagNr},${stunde},'inhalt',this.value);event.stopPropagation();"
+            onclick="event.stopPropagation();"
+            data-up-field="${tagNr}-${stunde}-inhalt"
+          >${plan.inhalt || ''}</textarea>
+        </td>`;
+      }
+    }
+    html += `</tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  container.innerHTML = html;
+}
+
+function upZurTagAnsicht(tagNr, stunde, event) {
+  if (event.target.tagName === 'TEXTAREA') return;
+  upAktivTag = tagNr;
+  upWechselAnsicht('tag');
+  // Fokus auf die entsprechende Stunde setzen
+  setTimeout(() => {
+    const field = document.querySelector(`[data-up-field="${tagNr}-${stunde}-inhalt"]`);
+    if (field) {
+      field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      field.focus();
+    }
+  }, 150);
 }
 
 function upZeitLabel(idx) {
