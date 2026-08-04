@@ -1290,6 +1290,18 @@ async function loadFerien(bundesland) {
 
 // ── STUNDENPLAN ──
 const SP_TAGE = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag'];
+// stunde = interne DB-Nummer (1–9); label = Anzeige; isLZ = Sonderzeile
+const SP_STUNDEN = [
+  { stunde: 1, label: '1.' },
+  { stunde: 2, label: '2.' },
+  { stunde: 3, label: 'LZ', isLZ: true },
+  { stunde: 4, label: '3.' },
+  { stunde: 5, label: '4.' },
+  { stunde: 6, label: '5.' },
+  { stunde: 7, label: '6.' },
+  { stunde: 8, label: '7.' },
+  { stunde: 9, label: '8.' },
+];
 let spDaten = {};
 let spEinstellungen = {};
 
@@ -1307,40 +1319,47 @@ async function loadStundenplan() {
   renderStundenplan();
 }
 
-function spZeitLabel(stunde) {
-  const z = (spEinstellungen.unterrichtszeiten || [])[stunde - 1];
+function spZeitLabel(idx) {
+  // idx = 0-based index in the SP_STUNDEN array → maps to unterrichtszeiten array
+  const z = (spEinstellungen.unterrichtszeiten || [])[idx];
   return (z && z.von && z.bis) ? `${z.von}–${z.bis}` : '';
 }
 
 function renderStundenplan() {
-  const klassenOpts = allKlassen.map(k => `<option value="${k.id}">${k.name}</option>`).join('');
   let html = '<thead><tr><th class="sp-time-col">Stunde</th>';
   SP_TAGE.forEach(t => html += `<th>${t}</th>`);
   html += '</tr></thead><tbody>';
 
-  for (let st = 1; st <= 8; st++) {
-    const zeit = spZeitLabel(st);
-    html += `<tr>
-      <td class="sp-time">${st}.<span class="sp-time-sub">${zeit}</span></td>`;
+  SP_STUNDEN.forEach((row, idx) => {
+    const { stunde, label, isLZ } = row;
+    const zeit = spZeitLabel(idx);
+    const lzStyle = isLZ ? 'background:#f0fdf4;' : '';
+
+    html += `<tr style="${lzStyle}">
+      <td class="sp-time" style="${isLZ ? 'color:var(--green-dark);font-style:italic;' : ''}">
+        ${label}<span class="sp-time-sub">${zeit}</span>
+      </td>`;
+
     for (let tag = 1; tag <= 5; tag++) {
-      const e = spDaten[`${tag}-${st}`] || {};
+      const e = spDaten[`${tag}-${stunde}`] || {};
       const opts = allKlassen.map(k =>
         `<option value="${k.id}" ${e.klasse_id === k.id ? 'selected' : ''}>${k.name}</option>`
       ).join('');
-      html += `<td>
-        <div class="sp-cell" data-tag="${tag}" data-st="${st}">
-          <input class="sp-fach" type="text" placeholder="Fach" value="${e.fach || ''}"
-            onchange="saveSpZelle(${tag},${st})">
-          <select class="sp-klasse" onchange="saveSpZelle(${tag},${st})">
+      html += `<td style="${lzStyle}">
+        <div class="sp-cell" data-tag="${tag}" data-st="${stunde}">
+          <input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach'}" value="${e.fach || ''}"
+            onchange="saveSpZelle(${tag},${stunde})">
+          <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
             <option value="">– Klasse –</option>${opts}
           </select>
           <input class="sp-raum" type="text" placeholder="Raum (optional)" value="${e.raum || ''}"
-            onchange="saveSpZelle(${tag},${st})">
+            onchange="saveSpZelle(${tag},${stunde})">
         </div>
       </td>`;
     }
     html += '</tr>';
-  }
+  });
+
   html += '</tbody>';
   document.getElementById('sp-table').innerHTML = html;
 }
