@@ -489,9 +489,50 @@
       <div class="page-title">Mein Stundenplan</div>
       <span id="sp-save-indicator" style="font-size:0.8rem; color:var(--gray-400); align-self:center;"></span>
     </div>
-    <div class="settings-section" style="padding:16px;">
+    <!-- Versions-Leiste -->
+    <div id="sp-version-bar" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <label style="font-size:0.85rem;font-weight:600;color:var(--gray-600);white-space:nowrap;">Version:</label>
+      <select id="sp-version-select" class="form-select" style="flex:1;min-width:180px;max-width:320px;" onchange="spWechselVersion(this.value)"></select>
+      <button class="btn btn-secondary btn-sm" onclick="spNeueVersion()" style="white-space:nowrap;">＋ Neue Version</button>
+      <button class="btn btn-secondary btn-sm" onclick="spVersionBearbeiten()" title="Zeitraum/Name bearbeiten">✏ Zeitraum</button>
+      <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:5px 10px;border-radius:8px;cursor:pointer;" onclick="spVersionLoeschen()" title="Version löschen">🗑</button>
+    </div>
+    <div id="sp-version-info" style="margin-bottom:12px;font-size:0.8rem;color:var(--gray-400);"></div>
+    <div id="sp-version-empty" class="hidden" style="text-align:center;padding:40px;color:var(--gray-400);">
+      <div style="font-size:2rem;margin-bottom:8px;">📅</div>
+      <div style="font-weight:600;margin-bottom:4px;">Noch kein Stundenplan angelegt</div>
+      <div style="margin-bottom:16px;font-size:0.9rem;">Erstelle eine neue Version um zu beginnen.</div>
+      <button class="btn btn-primary" onclick="spNeueVersion()">＋ Erste Version anlegen</button>
+    </div>
+    <div class="settings-section" id="sp-table-section" style="padding:16px;">
       <div class="sp-wrapper">
         <table class="sp-table" id="sp-table"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- STUNDENPLAN VERSION MODAL -->
+  <div class="modal-overlay hidden" id="modal-sp-version">
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-header">
+        <div class="modal-title" id="sp-version-modal-title">Neue Version</div>
+        <button class="modal-close" onclick="closeModal('modal-sp-version')">✕</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="sp-version-name" placeholder="z.B. Stundenplan 2. Halbjahr">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gültig ab</label>
+        <input class="form-input" type="date" id="sp-version-ab">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gültig bis <span style="font-weight:400;color:var(--gray-400);">(leer = noch aktuell)</span></label>
+        <input class="form-input" type="date" id="sp-version-bis">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-sp-version')">Abbrechen</button>
+        <button class="btn btn-primary" onclick="spVersionModalSave()">Speichern</button>
       </div>
     </div>
   </div>
@@ -1428,19 +1469,134 @@ const SP_STUNDEN = [
 ];
 let spDaten = {};
 let spEinstellungen = {};
+let spVersionen = [];
+let spAktivVersionId = null;
+let spVersionModalModus = 'neu'; // 'neu' | 'edit'
 
 async function loadStundenplan() {
-  const [{ data: einst }, { data: klassen }, { data: plan }] = await Promise.all([
+  const [{ data: einst }, { data: klassen }, { data: versionen }] = await Promise.all([
     sb.from('einstellungen').select('daten').eq('id', 1).single(),
     sb.from('klassen').select('id, name, farbe, schuljahr').order('name'),
-    sb.from('stundenplan').select('*'),
+    sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
   ]);
 
   spEinstellungen = einst?.daten || {};
   allKlassen = klassen || [];
+  spVersionen = versionen || [];
+
+  // Aktive Version: beibehalten wenn noch vorhanden, sonst neueste
+  if (!spAktivVersionId || !spVersionen.find(v => v.id === spAktivVersionId)) {
+    spAktivVersionId = spVersionen.length > 0 ? spVersionen[spVersionen.length - 1].id : null;
+  }
+
+  if (spAktivVersionId) {
+    const { data: plan } = await sb.from('stundenplan').select('*').eq('version_id', spAktivVersionId);
+    spDaten = {};
+    (plan || []).forEach(r => { spDaten[`${r.wochentag}-${r.stunde}`] = r; });
+  } else {
+    spDaten = {};
+  }
+
+  renderSpVersionBar();
+  renderStundenplan();
+}
+
+function renderSpVersionBar() {
+  const sel = document.getElementById('sp-version-select');
+  const empty = document.getElementById('sp-version-empty');
+  const tableSection = document.getElementById('sp-table-section');
+  const versionBar = document.getElementById('sp-version-bar');
+  const info = document.getElementById('sp-version-info');
+
+  if (spVersionen.length === 0) {
+    sel.innerHTML = '';
+    versionBar.style.display = 'none';
+    empty.classList.remove('hidden');
+    tableSection.classList.add('hidden');
+    info.textContent = '';
+    return;
+  }
+
+  versionBar.style.display = 'flex';
+  empty.classList.add('hidden');
+  tableSection.classList.remove('hidden');
+
+  sel.innerHTML = spVersionen.map(v => {
+    const ab = v.gueltig_ab ? new Date(v.gueltig_ab + 'T00:00:00').toLocaleDateString('de-DE') : '?';
+    const bis = v.gueltig_bis ? new Date(v.gueltig_bis + 'T00:00:00').toLocaleDateString('de-DE') : 'aktuell';
+    return `<option value="${v.id}" ${v.id === spAktivVersionId ? 'selected' : ''}>${v.name} (${ab} – ${bis})</option>`;
+  }).join('');
+
+  const aktiv = spVersionen.find(v => v.id === spAktivVersionId);
+  if (aktiv) {
+    const ab = aktiv.gueltig_ab ? new Date(aktiv.gueltig_ab + 'T00:00:00').toLocaleDateString('de-DE') : '?';
+    const bis = aktiv.gueltig_bis ? new Date(aktiv.gueltig_bis + 'T00:00:00').toLocaleDateString('de-DE') : 'aktuell';
+    info.textContent = `Gültigkeitszeitraum: ${ab} – ${bis}`;
+  }
+}
+
+async function spWechselVersion(id) {
+  spAktivVersionId = id;
+  const { data: plan } = await sb.from('stundenplan').select('*').eq('version_id', id);
   spDaten = {};
   (plan || []).forEach(r => { spDaten[`${r.wochentag}-${r.stunde}`] = r; });
+  renderSpVersionBar();
   renderStundenplan();
+}
+
+function spNeueVersion() {
+  spVersionModalModus = 'neu';
+  document.getElementById('sp-version-modal-title').textContent = 'Neue Version anlegen';
+  document.getElementById('sp-version-name').value = `Stundenplan ${spVersionen.length + 1}`;
+  document.getElementById('sp-version-ab').value = '';
+  document.getElementById('sp-version-bis').value = '';
+  openModal('modal-sp-version');
+}
+
+function spVersionBearbeiten() {
+  const aktiv = spVersionen.find(v => v.id === spAktivVersionId);
+  if (!aktiv) return;
+  spVersionModalModus = 'edit';
+  document.getElementById('sp-version-modal-title').textContent = 'Version bearbeiten';
+  document.getElementById('sp-version-name').value = aktiv.name;
+  document.getElementById('sp-version-ab').value = aktiv.gueltig_ab || '';
+  document.getElementById('sp-version-bis').value = aktiv.gueltig_bis || '';
+  openModal('modal-sp-version');
+}
+
+async function spVersionModalSave() {
+  const name = document.getElementById('sp-version-name').value.trim() || 'Stundenplan';
+  const gueltig_ab = document.getElementById('sp-version-ab').value || null;
+  const gueltig_bis = document.getElementById('sp-version-bis').value || null;
+
+  if (!gueltig_ab) { showToast('Bitte ein Startdatum eingeben.', 'error'); return; }
+
+  if (spVersionModalModus === 'neu') {
+    const { data, error } = await sb.from('stundenplan_versionen')
+      .insert({ name, gueltig_ab, gueltig_bis }).select().single();
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+    spAktivVersionId = data.id;
+    showToast('Version angelegt ✓', 'success');
+  } else {
+    const { error } = await sb.from('stundenplan_versionen')
+      .update({ name, gueltig_ab, gueltig_bis }).eq('id', spAktivVersionId);
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+    showToast('Version aktualisiert ✓', 'success');
+  }
+
+  closeModal('modal-sp-version');
+  await loadStundenplan();
+}
+
+async function spVersionLoeschen() {
+  if (spVersionen.length <= 1) { showToast('Du kannst nicht die einzige Version löschen.', 'error'); return; }
+  const aktiv = spVersionen.find(v => v.id === spAktivVersionId);
+  if (!confirm(`Version "${aktiv?.name}" und alle zugehörigen Einträge wirklich löschen?`)) return;
+  await sb.from('stundenplan').delete().eq('version_id', spAktivVersionId);
+  await sb.from('stundenplan_versionen').delete().eq('id', spAktivVersionId);
+  spAktivVersionId = null;
+  showToast('Version gelöscht.', 'success');
+  await loadStundenplan();
 }
 
 function spZeitLabel(idx) {
@@ -1524,12 +1680,14 @@ async function saveSpZelle(wochentag, stunde) {
   const ind = document.getElementById('sp-save-indicator');
   if (ind) ind.textContent = '💾 …';
 
+  if (!spAktivVersionId) { showToast('Keine Version aktiv.', 'error'); return; }
+
   const { error } = await sb.from('stundenplan').upsert(
-    { wochentag, stunde, fach, klasse_id, raum },
-    { onConflict: 'wochentag,stunde' }
+    { version_id: spAktivVersionId, wochentag, stunde, fach, klasse_id, raum },
+    { onConflict: 'version_id,wochentag,stunde' }
   );
 
-  spDaten[`${wochentag}-${stunde}`] = { wochentag, stunde, fach, klasse_id, raum };
+  spDaten[`${wochentag}-${stunde}`] = { version_id: spAktivVersionId, wochentag, stunde, fach, klasse_id, raum };
 
   // Zellfarbe sofort live aktualisieren
   const td = cell.parentElement;
@@ -1607,15 +1765,31 @@ async function loadUnterrichtsplanung() {
   document.getElementById('up-week-dates').textContent = `${fmt(monday)} – ${fmt(friday)}`;
 
   // Daten laden
-  const [{ data: einst }, { data: klassen }, { data: spRows }, { data: planRows }] = await Promise.all([
+  const monday = getMondayOfWeek(upKW, upJahr);
+  const mondayStr = monday.toISOString().split('T')[0];
+
+  const [{ data: einst }, { data: klassen }, { data: versionen }, { data: planRows }] = await Promise.all([
     sb.from('einstellungen').select('daten').eq('id', 1).single(),
     sb.from('klassen').select('id, name, farbe').order('name'),
-    sb.from('stundenplan').select('*'),
+    sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
     sb.from('unterrichtsplanung').select('*').eq('kalenderwoche', upKW).eq('jahr', upJahr),
   ]);
 
   upEinst = einst?.daten || {};
   upAllKlassen = klassen || [];
+
+  // Gültige Version für diese Woche ermitteln:
+  // Neueste Version, deren gueltig_ab <= Monday dieser Woche
+  const alleVersionen = versionen || [];
+  const gueltigeVersion = alleVersionen.slice().reverse().find(v => (v.gueltig_ab || '') <= mondayStr)
+    || alleVersionen[alleVersionen.length - 1]; // Fallback: neueste
+
+  let spRows = [];
+  if (gueltigeVersion) {
+    const { data } = await sb.from('stundenplan').select('*').eq('version_id', gueltigeVersion.id);
+    spRows = data || [];
+  }
+
   upSpDaten = {};
   (spRows || []).forEach(r => { upSpDaten[`${r.wochentag}-${r.stunde}`] = r; });
   upPlanDaten = {};
