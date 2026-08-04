@@ -715,6 +715,7 @@
     <!-- Wochennavigation -->
     <div id="up-week-nav" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--white);border-radius:12px;border:1px solid var(--gray-200);margin-bottom:14px;">
       <button class="btn btn-secondary btn-sm" onclick="upWechselWoche(-1)">← Vorwoche</button>
+      <button onclick="upZurHeute()" style="padding:5px 12px;border-radius:7px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-size:12px;font-weight:600;">Heute</button>
       <div style="text-align:center">
         <div id="up-week-label" style="font-size:1rem;font-weight:600;color:var(--gray-800)"></div>
         <div id="up-week-dates" style="font-size:0.78rem;color:var(--gray-400);margin-top:2px"></div>
@@ -1942,6 +1943,16 @@ function getMondayOfWeek(kw, jahr) {
   const monday = new Date(jan4);
   monday.setUTCDate(jan4.getUTCDate() - dayOfWeek + 1 + (kw - 1) * 7);
   return monday;
+}
+
+function upZurHeute() {
+  const today = new Date();
+  const iso = getISOWeek(today);
+  upKW = iso.kw; upJahr = iso.jahr;
+  const dow = today.getDay();
+  upAktivTag = (dow >= 1 && dow <= 5) ? dow : 1;
+  upAnsicht = 'tag';
+  loadUnterrichtsplanung().then(() => renderUpTag(upAktivTag));
 }
 
 function upZeigeLoeschDialog() {
