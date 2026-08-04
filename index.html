@@ -1669,15 +1669,18 @@ function renderUpTag(tagNr) {
     return;
   }
 
+  const isMobile = window.innerWidth <= 768;
+  const leftW = isMobile ? '120px' : '150px';
+
   let html = `
-    <div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;">
+    <div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;width:100%;box-sizing:border-box;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
         <div style="font-weight:600;font-size:0.95rem;">${datumStr}</div>
         <span id="up-save-ind" style="font-size:11px;color:var(--gray-400);"></span>
       </div>
-      <div style="display:grid;grid-template-columns:160px 1fr;border-bottom:1px solid var(--gray-200);background:var(--gray-50);">
-        <div style="padding:7px 14px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;border-right:1px solid var(--gray-200);">Stunde / Fach / Klasse</div>
-        <div style="padding:7px 14px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;">Einträge</div>
+      <div style="display:flex;border-bottom:1px solid var(--gray-200);background:var(--gray-50);">
+        <div style="flex:0 0 ${leftW};width:${leftW};padding:7px 14px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;border-right:1px solid var(--gray-200);">Stunde / Fach / Klasse</div>
+        <div style="flex:1;min-width:0;padding:7px 14px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;">Einträge</div>
       </div>`;
 
   stundenAmTag.forEach((row, idx) => {
@@ -1691,22 +1694,22 @@ function renderUpTag(tagNr) {
     const dotColor = klasseObj?.farbe || '#d1d5db';
     const dotStyle = `width:9px;height:9px;border-radius:50%;background:${dotColor};display:inline-block;margin-right:5px;vertical-align:middle;`;
 
-    const tagStyle = `display:flex;align-items:stretch;border:1px solid var(--gray-200);border-radius:4px;overflow:hidden;margin-bottom:5px;`;
-    const tagLabelStyle = (bg, color) => `width:44px;min-width:44px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:${bg};color:${color};border-right:1px solid var(--gray-200);letter-spacing:.03em;`;
-    const inpStyle = `border:none;padding:5px 8px;width:100%;font-size:12px;background:transparent;color:var(--gray-800);font-family:inherit;resize:none;line-height:1.5;outline:none;`;
-    const inpSmStyle = `border:none;padding:5px 8px;width:100%;font-size:11px;background:transparent;color:var(--gray-700);font-family:inherit;resize:none;line-height:1.4;outline:none;`;
+    const tagStyle = `display:flex;align-items:stretch;border:1px solid var(--gray-200);border-radius:4px;overflow:hidden;margin-bottom:4px;`;
+    const tagLabelStyle = (bg, color) => `flex:0 0 38px;width:38px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;background:${bg};color:${color};border-right:1px solid var(--gray-200);letter-spacing:.03em;text-transform:uppercase;`;
+    const inpStyle = `border:none;padding:4px 7px;min-width:0;width:100%;font-size:12px;background:transparent;color:var(--gray-800);font-family:inherit;resize:none;line-height:1.5;outline:none;`;
+    const inpSmStyle = `border:none;padding:4px 7px;min-width:0;width:100%;font-size:11px;background:transparent;color:var(--gray-700);font-family:inherit;resize:none;line-height:1.4;outline:none;`;
 
     html += `
-      <div style="display:grid;grid-template-columns:160px 1fr;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}">
-        <div style="padding:12px 14px;border-right:1px solid var(--gray-200);display:flex;flex-direction:column;gap:6px;justify-content:center;">
+      <div style="display:flex;width:100%;box-sizing:border-box;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}">
+        <div style="flex:0 0 ${leftW};width:${leftW};min-width:0;padding:10px 12px;border-right:1px solid var(--gray-200);display:flex;flex-direction:column;gap:5px;justify-content:center;">
           <div>
-            <span style="font-weight:600;font-size:1rem;${isLZ ? 'color:var(--gray-400);' : ''}">${label} Stunde</span><br>
-            <span style="font-size:11px;color:var(--gray-400);">${zeit}</span>
+            <span style="font-weight:600;font-size:0.9rem;${isLZ ? 'color:var(--gray-400);' : ''}">${label} Stunde</span><br>
+            <span style="font-size:10px;color:var(--gray-400);">${zeit}</span>
           </div>
-          ${sp.fach ? `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:var(--green-light);color:var(--green-dark);">${sp.fach}</span>` : ''}
-          ${klasseObj ? `<div style="font-size:12px;color:var(--gray-500);"><span style="${dotStyle}"></span>${klasseObj.name}</div>` : ''}
+          ${sp.fach ? `<span style="display:inline-block;padding:2px 6px;border-radius:20px;font-size:10px;font-weight:500;background:var(--green-light);color:var(--green-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sp.fach}</span>` : ''}
+          ${klasseObj ? `<div style="font-size:11px;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="${dotStyle}"></span>${klasseObj.name}</div>` : ''}
         </div>
-        <div style="padding:10px 12px;display:flex;flex-direction:column;gap:5px;${isLZ ? 'background:var(--gray-50);' : ''}">
+        <div style="flex:1;min-width:0;padding:8px 10px;display:flex;flex-direction:column;gap:4px;${isLZ ? 'background:var(--gray-50);' : ''}">
           <div style="${tagStyle}">
             <span style="${tagLabelStyle('#dbeafe','#1e40af')}">Inhalt</span>
             <textarea style="${inpStyle}" rows="2" placeholder="Was wurde erarbeitet, besprochen, geübt…"
