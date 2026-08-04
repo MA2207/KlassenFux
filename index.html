@@ -749,6 +749,16 @@
             </div>
           </div>
         </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-size:11px;font-weight:600;color:var(--gray-500);display:block;margin-bottom:6px;">WOCHENTAGE</label>
+          <div style="display:flex;gap:6px;">
+            <label style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="up-del-tag-1" checked style="accent-color:#dc2626;width:15px;height:15px;"><span style="font-size:11px;font-weight:600;color:var(--gray-600);">Mo</span></label>
+            <label style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="up-del-tag-2" checked style="accent-color:#dc2626;width:15px;height:15px;"><span style="font-size:11px;font-weight:600;color:var(--gray-600);">Di</span></label>
+            <label style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="up-del-tag-3" checked style="accent-color:#dc2626;width:15px;height:15px;"><span style="font-size:11px;font-weight:600;color:var(--gray-600);">Mi</span></label>
+            <label style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="up-del-tag-4" checked style="accent-color:#dc2626;width:15px;height:15px;"><span style="font-size:11px;font-weight:600;color:var(--gray-600);">Do</span></label>
+            <label style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="up-del-tag-5" checked style="accent-color:#dc2626;width:15px;height:15px;"><span style="font-size:11px;font-weight:600;color:var(--gray-600);">Fr</span></label>
+          </div>
+        </div>
         <div id="up-del-status" style="font-size:12px;color:#dc2626;margin-bottom:12px;min-height:18px;"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button onclick="upSchliesseLoeschModal()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--gray-200);background:var(--white);color:var(--gray-700);font-size:13px;cursor:pointer;">Abbrechen</button>
@@ -1939,6 +1949,7 @@ function upZeigeLoeschDialog() {
   document.getElementById('up-del-von-jahr').value = upJahr;
   document.getElementById('up-del-bis-kw').value = upKW;
   document.getElementById('up-del-bis-jahr').value = upJahr;
+  for (let i = 1; i <= 5; i++) document.getElementById('up-del-tag-' + i).checked = true;
   document.getElementById('up-del-status').textContent = '';
   document.getElementById('up-losch-modal').style.display = 'flex';
 }
@@ -1957,6 +1968,8 @@ async function upLoescheBereich() {
   if (vonJahr * 100 + vonKW > bisJahr * 100 + bisKW) {
     status.textContent = '"Von" muss vor oder gleich "Bis" liegen.'; return;
   }
+  const selectedDays = [1,2,3,4,5].filter(i => document.getElementById('up-del-tag-' + i).checked);
+  if (selectedDays.length === 0) { status.textContent = 'Bitte mindestens einen Wochentag auswählen.'; return; }
   status.textContent = 'Wird gelöscht…';
   const clearData = { inhalt: '', hausaufgaben: '', notiz: '' };
   let errors = [];
@@ -1964,7 +1977,7 @@ async function upLoescheBereich() {
   const endVal = bisJahr * 100 + bisKW;
   while (cur.jahr * 100 + cur.kw <= endVal) {
     const { error } = await sb.from('unterrichtsplanung')
-      .update(clearData).eq('kalenderwoche', cur.kw).eq('jahr', cur.jahr);
+      .update(clearData).eq('kalenderwoche', cur.kw).eq('jahr', cur.jahr).in('wochentag', selectedDays);
     if (error) errors.push(error.message);
     cur.kw++;
     const maxKW = getISOWeek(new Date(cur.jahr, 11, 28)).kw;
