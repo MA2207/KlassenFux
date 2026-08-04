@@ -2369,7 +2369,8 @@ function renderUpTabs() {
   tabsEl.style.display = 'flex';
   const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
   const monday = getMondayOfWeek(upKW, upJahr);
-  const heuteDateStr = new Date().toISOString().split('T')[0];
+  const _h = new Date();
+  const heuteDateStr = `${_h.getFullYear()}-${String(_h.getMonth()+1).padStart(2,'0')}-${String(_h.getDate()).padStart(2,'0')}`;
   tabsEl.innerHTML = tage.map((t, i) => {
     const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
     const tagNr = i + 1;
@@ -2450,9 +2451,12 @@ function renderUpWoche() {
           ${tage.map((t, i) => {
             const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
             const fi = tagFerienInfo[i];
-            const isHeute = d.toISOString().split('T')[0] === new Date().toISOString().split('T')[0];
-            const bg = fi.istFrei ? (fi.typ === 'ferien' ? '#1d4ed8' : '#92400e') : (isHeute ? '#166534' : 'var(--gray-800)');
-            const label = fi.istFrei ? `<div style="font-size:9px;font-weight:400;opacity:0.85;margin-top:1px;">${fi.name}</div>` : (isHeute ? `<div style="font-size:9px;font-weight:400;opacity:0.85;margin-top:1px;">Heute</div>` : '');
+            const _hh = new Date();
+            const _heutStr = `${_hh.getFullYear()}-${String(_hh.getMonth()+1).padStart(2,'0')}-${String(_hh.getDate()).padStart(2,'0')}`;
+            const isHeute = d.toISOString().split('T')[0] === _heutStr;
+            const bg = isHeute ? '#166534' : (fi.istFrei ? (fi.typ === 'ferien' ? '#1d4ed8' : '#92400e') : 'var(--gray-800)');
+            const subLabel = isHeute ? 'Heute' : (fi.istFrei ? fi.name : '');
+            const label = subLabel ? `<div style="font-size:9px;font-weight:400;opacity:0.85;margin-top:1px;">${subLabel}</div>` : '';
             return `<th style="padding:8px 6px;background:${bg};color:white;font-size:11px;font-weight:600;text-align:center;border-right:1px solid rgba(255,255,255,0.15);">${t} ${d.getUTCDate()}.${d.getUTCMonth()+1}.${label}</th>`;
           }).join('')}
         </tr>
@@ -2585,7 +2589,9 @@ function renderUpTag(tagNr) {
   const isMobile = window.innerWidth <= 768;
   const leftW = isMobile ? '120px' : '150px';
 
-  const istHeute = tagDateStr === new Date().toISOString().split('T')[0];
+  const _hToday = new Date();
+  const _hTodayStr = `${_hToday.getFullYear()}-${String(_hToday.getMonth()+1).padStart(2,'0')}-${String(_hToday.getDate()).padStart(2,'0')}`;
+  const istHeute = tagDateStr === _hTodayStr;
   const headerBg = istHeute ? '#dcfce7' : 'var(--gray-50)';
   const headerBorder = istHeute ? '#86efac' : 'var(--gray-200)';
   const headerColor = istHeute ? '#166534' : 'var(--gray-800)';
