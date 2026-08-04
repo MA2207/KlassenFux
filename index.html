@@ -1423,7 +1423,7 @@ function renderStundenplan() {
   SP_STUNDEN.forEach((row, idx) => {
     const { stunde, label, isLZ } = row;
     const zeit = spZeitLabel(idx);
-    const lzStyle = isLZ ? 'background:#e5e7eb;' : '';
+    const lzStyle = '';
 
     html += `<tr style="${lzStyle}">
       <td class="sp-time" style="${isLZ ? 'color:#6b7280;font-style:italic;' : ''}">
@@ -1444,8 +1444,6 @@ function renderStundenplan() {
       let cellBg = '';
       if (isFrei) {
         cellBg = 'background:#bbf7d0;'; // hellgrün für Frei
-      } else if (isLZ) {
-        cellBg = 'background:#e5e7eb;'; // grau für LZ (kein Fach)
       } else if (klasseObj?.farbe) {
         cellBg = `background:${hexToRgba(klasseObj.farbe, 0.33)};`; // Klassenfarbe mit Transparenz
       }
@@ -1506,9 +1504,6 @@ async function saveSpZelle(wochentag, stunde) {
   if (isFrei) {
     td.style.background = '#bbf7d0';
     cell.classList.add('sp-cell-frei');
-  } else if (isLZCell) {
-    td.style.background = '#e5e7eb'; // grau für LZ
-    cell.classList.remove('sp-cell-frei');
   } else if (klasseObj?.farbe) {
     td.style.background = hexToRgba(klasseObj.farbe, 0.33);
     cell.classList.remove('sp-cell-frei');
