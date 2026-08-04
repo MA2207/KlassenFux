@@ -2144,23 +2144,24 @@ function renderUpTag(tagNr) {
   // Stunden die an diesem Tag im Stundenplan stehen
   const stundenAmTag = SP_STUNDEN.filter(s => upSpDaten[`${tagNr}-${s.stunde}`]);
 
-  const container = document.getElementById('up-day-content');
-
-// Ferienprüfung
-  const _frd = new Date(getMondayOfWeek(upKW, upJahr)); _frd.setUTCDate(_frd.getUTCDate() + tagNr - 1);
-  const tagDateStr = _frd.toISOString().split('T')[0];
-  const datumStr = _frd.toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'UTC' });
-  const ferienInfo = upIstFerientag(tagDateStr);
-  if (ferienInfo.istFrei) {
-    const isFerien = ferienInfo.typ === 'ferien';
-    container.innerHTML = `
-      <div style="background:${isFerien ? '#eff6ff' : '#fefce8'};border:1px solid ${isFerien ? '#bfdbfe' : '#fde68a'};border-radius:12px;padding:40px 20px;text-align:center;">
-        <div style="font-size:2.5rem;margin-bottom:10px;">${isFerien ? '🏖️' : '📅'}</div>
-        <div style="font-size:1.1rem;font-weight:700;color:${isFerien ? '#1d4ed8' : '#92400e'};margin-bottom:4px;">${ferienInfo.name}</div>
-        <div style="font-size:0.85rem;color:${isFerien ? '#3b82f6' : '#d97706'};">${datumStr}</div>
-        <div style="margin-top:10px;font-size:0.8rem;color:var(--gray-400);">An diesem Tag findet kein Unterricht statt.</div>
-      </div>`;
-    return;
+  const container = document.getElementById('up-day-content');  // Ferienprüfung
+  {
+    const _d = new Date(getMondayOfWeek(upKW, upJahr));
+    _d.setUTCDate(_d.getUTCDate() + tagNr - 1);
+    const _ds = _d.toISOString().split('T')[0];
+    const _dStr = _d.toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'UTC' });
+    const _fi = upIstFerientag(_ds);
+    if (_fi.istFrei) {
+      const _isF = _fi.typ === 'ferien';
+      container.innerHTML = `
+        <div style="background:${_isF ? '#eff6ff' : '#fefce8'};border:1px solid ${_isF ? '#bfdbfe' : '#fde68a'};border-radius:12px;padding:40px 20px;text-align:center;">
+          <div style="font-size:2.5rem;margin-bottom:10px;">${_isF ? '🏖️' : '📅'}</div>
+          <div style="font-size:1.1rem;font-weight:700;color:${_isF ? '#1d4ed8' : '#92400e'};margin-bottom:4px;">${_fi.name}</div>
+          <div style="font-size:0.85rem;color:${_isF ? '#3b82f6' : '#d97706'};">${_dStr}</div>
+          <div style="margin-top:10px;font-size:0.8rem;color:var(--gray-400);">An diesem Tag findet kein Unterricht statt.</div>
+        </div>`;
+      return;
+    }
   }
 
     if (stundenAmTag.length === 0) {
