@@ -719,7 +719,42 @@
         <div id="up-week-label" style="font-size:1rem;font-weight:600;color:var(--gray-800)"></div>
         <div id="up-week-dates" style="font-size:0.78rem;color:var(--gray-400);margin-top:2px"></div>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="upWechselWoche(1)">Nächste Woche →</button>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn btn-secondary btn-sm" onclick="upWechselWoche(1)">Nächste Woche →</button>
+        <button onclick="upZeigeLoeschDialog()" title="Inhalte löschen" style="padding:5px 8px;border-radius:7px;border:1px solid #fca5a5;background:#fff1f2;color:#dc2626;cursor:pointer;font-size:14px;line-height:1;">🗑</button>
+      </div>
+    </div>
+
+    <!-- Lösch-Modal -->
+    <div id="up-losch-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:var(--white);border-radius:16px;padding:24px;width:min(380px,90vw);box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <span style="font-size:1.3rem;">🗑</span>
+          <span style="font-size:1rem;font-weight:700;color:var(--gray-800);">Inhalte löschen</span>
+        </div>
+        <p style="font-size:0.82rem;color:var(--gray-500);margin:0 0 18px;line-height:1.5;">Löscht <strong>Unterrichtsinhalte, Hausaufgaben und Notizen</strong> im gewählten Zeitraum.<br>Fach und Klasse bleiben erhalten.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--gray-500);display:block;margin-bottom:4px;">VON · KW</label>
+            <div style="display:flex;gap:6px;">
+              <input id="up-del-von-kw" type="number" min="1" max="53" style="width:52px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;text-align:center;">
+              <input id="up-del-von-jahr" type="number" min="2020" max="2099" style="width:72px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;text-align:center;">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--gray-500);display:block;margin-bottom:4px;">BIS · KW</label>
+            <div style="display:flex;gap:6px;">
+              <input id="up-del-bis-kw" type="number" min="1" max="53" style="width:52px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;text-align:center;">
+              <input id="up-del-bis-jahr" type="number" min="2020" max="2099" style="width:72px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;text-align:center;">
+            </div>
+          </div>
+        </div>
+        <div id="up-del-status" style="font-size:12px;color:#dc2626;margin-bottom:12px;min-height:18px;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button onclick="upSchliesseLoeschModal()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--gray-200);background:var(--white);color:var(--gray-700);font-size:13px;cursor:pointer;">Abbrechen</button>
+          <button onclick="upLoescheBereich()" style="padding:8px 18px;border-radius:8px;border:none;background:#dc2626;color:white;font-size:13px;font-weight:600;cursor:pointer;">Löschen</button>
+        </div>
+      </div>
     </div>
 
     <!-- Tages-Tabs -->
@@ -1899,6 +1934,49 @@ function getMondayOfWeek(kw, jahr) {
   return monday;
 }
 
+function upZeigeLoeschDialog() {
+  document.getElementById('up-del-von-kw').value = upKW;
+  document.getElementById('up-del-von-jahr').value = upJahr;
+  document.getElementById('up-del-bis-kw').value = upKW;
+  document.getElementById('up-del-bis-jahr').value = upJahr;
+  document.getElementById('up-del-status').textContent = '';
+  document.getElementById('up-losch-modal').style.display = 'flex';
+}
+function upSchliesseLoeschModal() {
+  document.getElementById('up-losch-modal').style.display = 'none';
+}
+async function upLoescheBereich() {
+  const vonKW   = parseInt(document.getElementById('up-del-von-kw').value);
+  const vonJahr = parseInt(document.getElementById('up-del-von-jahr').value);
+  const bisKW   = parseInt(document.getElementById('up-del-bis-kw').value);
+  const bisJahr = parseInt(document.getElementById('up-del-bis-jahr').value);
+  const status  = document.getElementById('up-del-status');
+  if (isNaN(vonKW) || isNaN(vonJahr) || isNaN(bisKW) || isNaN(bisJahr)) {
+    status.textContent = 'Bitte alle Felder ausfüllen.'; return;
+  }
+  if (vonJahr * 100 + vonKW > bisJahr * 100 + bisKW) {
+    status.textContent = '"Von" muss vor oder gleich "Bis" liegen.'; return;
+  }
+  status.textContent = 'Wird gelöscht…';
+  const clearData = { inhalt: '', hausaufgaben: '', notiz: '' };
+  let errors = [];
+  let cur = { kw: vonKW, jahr: vonJahr };
+  const endVal = bisJahr * 100 + bisKW;
+  while (cur.jahr * 100 + cur.kw <= endVal) {
+    const { error } = await sb.from('unterrichtsplanung')
+      .update(clearData).eq('kalenderwoche', cur.kw).eq('jahr', cur.jahr);
+    if (error) errors.push(error.message);
+    cur.kw++;
+    const maxKW = getISOWeek(new Date(cur.jahr, 11, 28)).kw;
+    if (cur.kw > maxKW) { cur.kw = 1; cur.jahr++; }
+  }
+  if (errors.length > 0) {
+    status.textContent = 'Fehler: ' + errors[0];
+  } else {
+    upSchliesseLoeschModal();
+    loadUnterrichtsplanung();
+  }
+}
 function upWechselWoche(delta) {
   let kw = upKW + delta;
   let jahr = upJahr;
