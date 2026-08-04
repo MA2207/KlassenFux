@@ -2147,6 +2147,9 @@ function renderUpTag(tagNr) {
   const container = document.getElementById('up-day-content');
 
 // Ferienprüfung
+  const _frd = new Date(getMondayOfWeek(upKW, upJahr)); _frd.setUTCDate(_frd.getUTCDate() + tagNr - 1);
+  const tagDateStr = _frd.toISOString().split('T')[0];
+  const datumStr = _frd.toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'UTC' });
   const ferienInfo = upIstFerientag(tagDateStr);
   if (ferienInfo.istFrei) {
     const isFerien = ferienInfo.typ === 'ferien';
