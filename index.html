@@ -1845,12 +1845,45 @@ let upJahr = null;      // aktuelles Jahr
 let upAktivTag = 1;     // 1=Mo … 5=Fr
 let upAnsicht = 'tag';  // 'tag' oder 'woche'
 let upSpDaten = {};     // Stundenplan-Daten für die Woche
-let upPlanDaten = {};   // Unterrichtsplanung-Einträge { 'tag-stunde': row }
+let upPlanDaten = {};
+let upFerienCache = null;
+let upFerienDaten = [];   // Unterrichtsplanung-Einträge { 'tag-stunde': row }
 let upAllKlassen = [];
 let upEinst = {};
 let upSaveTimers = {};
 
 // Hilfsfunktion: ISO-Kalenderwoche berechnen
+async function upLadeFerien(bundesland) {
+  const now = new Date();
+  const jahr = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  if (upFerienCache && upFerienCache.bl === bundesland && upFerienCache.jahr === jahr) {
+    return upFerienCache.ferien;
+  }
+  if (!bundesland) return [];
+  try {
+    const url = `https://openholidaysapi.org/SchoolHolidays?countryIsoCode=DE&languageIsoCode=DE&validFrom=${jahr}-08-01&validTo=${jahr+1}-07-31&subdivisionCode=DE-${bundesland}`;
+    const res = await fetch(url);
+    const ferien = await res.json();
+    upFerienCache = { bl: bundesland, jahr, ferien: ferien || [] };
+    return ferien || [];
+  } catch(e) { return []; }
+}
+
+function upIstFerientag(dateStr) {
+  for (const f of upFerienDaten) {
+    if (dateStr >= f.startDate && dateStr <= f.endDate) {
+      const name = f.name?.find(n => n.language === 'DE')?.text || f.name?.[0]?.text || 'Schulferien';
+      return { istFrei: true, name, typ: 'ferien' };
+    }
+  }
+  for (const ft of (upEinst.freieTage || [])) {
+    if (ft.datum === dateStr) {
+      return { istFrei: true, name: ft.bezeichnung || 'Unterrichtsfrei', typ: 'freiertag' };
+    }
+  }
+  return { istFrei: false };
+}
+
 function getISOWeek(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
@@ -1922,6 +1955,8 @@ async function loadUnterrichtsplanung() {
   upPlanDaten = {};
   (planRows || []).forEach(r => { upPlanDaten[`${r.wochentag}-${r.stunde}`] = r; });
 
+  upFerienDaten = await upLadeFerien(upEinst.bundesland || '');
+
   renderUpTabs();
   if (upAnsicht === 'woche') renderUpWoche();
   else renderUpTag(upAktivTag);
@@ -1977,7 +2012,6 @@ function renderUpWoche() {
   const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
   const monday = getMondayOfWeek(upKW, upJahr);
 
-  // Alle Stunden ermitteln, die in dieser Woche irgendwo im SP stehen
   const stundenInWoche = SP_STUNDEN.filter(s =>
     [1,2,3,4,5].some(tag => upSpDaten[`${tag}-${s.stunde}`])
   );
@@ -1990,7 +2024,12 @@ function renderUpWoche() {
     return;
   }
 
-  // Tabellenkopf
+  // Ferien pro Tag vorberechnen
+  const tagFerienInfo = tage.map((_, i) => {
+    const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
+    return upIstFerientag(d.toISOString().split('T')[0]);
+  });
+
   let html = `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);background:var(--white);">
     <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:480px;">
       <colgroup>
@@ -2002,7 +2041,10 @@ function renderUpWoche() {
           <th style="padding:8px 4px;background:var(--gray-800);color:white;font-size:10px;font-weight:600;text-align:center;border-right:1px solid rgba(255,255,255,0.15);"></th>
           ${tage.map((t, i) => {
             const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
-            return `<th style="padding:8px 6px;background:var(--gray-800);color:white;font-size:11px;font-weight:600;text-align:center;border-right:1px solid rgba(255,255,255,0.15);">${t} ${d.getUTCDate()}.${d.getUTCMonth()+1}.</th>`;
+            const fi = tagFerienInfo[i];
+            const bg = fi.istFrei ? (fi.typ === 'ferien' ? '#1d4ed8' : '#92400e') : 'var(--gray-800)';
+            const label = fi.istFrei ? `<div style="font-size:9px;font-weight:400;opacity:0.85;margin-top:1px;">${fi.name}</div>` : '';
+            return `<th style="padding:8px 6px;background:${bg};color:white;font-size:11px;font-weight:600;text-align:center;border-right:1px solid rgba(255,255,255,0.15);">${t} ${d.getUTCDate()}.${d.getUTCMonth()+1}.${label}</th>`;
           }).join('')}
         </tr>
       </thead>
@@ -2019,10 +2061,20 @@ function renderUpWoche() {
       </td>`;
 
     for (let tagNr = 1; tagNr <= 5; tagNr++) {
+      const fi = tagFerienInfo[tagNr - 1];
+      if (fi.istFrei) {
+        const isFerien = fi.typ === 'ferien';
+        const cellBg = isFerien ? '#eff6ff' : '#fefce8';
+        const borderColor = isFerien ? '#bfdbfe' : '#fde68a';
+        const textColor = isFerien ? '#1d4ed8' : '#92400e';
+        html += `<td style="background:${cellBg};border-right:1px solid ${borderColor};border-bottom:1px solid ${borderColor};text-align:center;vertical-align:middle;padding:6px 4px;">
+          <span style="font-size:9px;font-weight:600;color:${textColor};">${isFerien ? '🏖️' : '📅'}</span>
+        </td>`;
+        continue;
+      }
+
       const sp = upSpDaten[`${tagNr}-${stunde}`];
       const plan = upPlanDaten[`${tagNr}-${stunde}`] || {};
-
-      // Effektive Werte mit Override
       const effFach = ('fach' in plan) ? (plan.fach ?? '') : (sp?.fach || '');
       const effKlasseId = ('klasse_id' in plan) ? (plan.klasse_id ?? '') : (sp?.klasse_id || '');
       const klasseObj = effKlasseId ? upAllKlassen.find(k => k.id === effKlasseId) : null;
@@ -2094,7 +2146,21 @@ function renderUpTag(tagNr) {
 
   const container = document.getElementById('up-day-content');
 
-  if (stundenAmTag.length === 0) {
+// Ferienprüfung
+  const ferienInfo = upIstFerientag(tagDateStr);
+  if (ferienInfo.istFrei) {
+    const isFerien = ferienInfo.typ === 'ferien';
+    container.innerHTML = `
+      <div style="background:${isFerien ? '#eff6ff' : '#fefce8'};border:1px solid ${isFerien ? '#bfdbfe' : '#fde68a'};border-radius:12px;padding:40px 20px;text-align:center;">
+        <div style="font-size:2.5rem;margin-bottom:10px;">${isFerien ? '🏖️' : '📅'}</div>
+        <div style="font-size:1.1rem;font-weight:700;color:${isFerien ? '#1d4ed8' : '#92400e'};margin-bottom:4px;">${ferienInfo.name}</div>
+        <div style="font-size:0.85rem;color:${isFerien ? '#3b82f6' : '#d97706'};">${datumStr}</div>
+        <div style="margin-top:10px;font-size:0.8rem;color:var(--gray-400);">An diesem Tag findet kein Unterricht statt.</div>
+      </div>`;
+    return;
+  }
+
+    if (stundenAmTag.length === 0) {
     container.innerHTML = `
       <div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;color:var(--gray-400);">
         <div style="font-size:2rem;margin-bottom:8px;">📭</div>
