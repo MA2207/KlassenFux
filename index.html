@@ -1145,7 +1145,9 @@ function kdRenderCheckliste() {
       </tr></thead>
       <tbody>
         ${kdSchueler.map((s, idx) => {
-          const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50)';
+          const hakenSpalten = kdSpalten.filter(sp => sp.typ === 'haken');
+          const alleGesetzt = hakenSpalten.length > 0 && hakenSpalten.every(sp => kdEintraege[`${sp.id}_${s.id}`] === '1');
+          const rowBg = alleGesetzt ? '#dcfce7' : (idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50)');
           return `<tr>
             <td style="padding:6px 8px;font-size:14px;border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-100);position:sticky;left:0;background:${rowBg};z-index:1;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
               <span style="font-weight:600;color:var(--gray-800);">${s.nachname}</span>
