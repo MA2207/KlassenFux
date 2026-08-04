@@ -4,16 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#E8621A">
+  <meta name="theme-color" content="#16a34a">
   <title>KlassenFux</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --fox: #E8621A;
-      --fox-light: #FEF0E6;
-      --fox-dark: #C4511A;
+      --green: #16a34a;
+      --green-light: #dcfce7;
+      --green-dark: #15803d;
       --gray-50: #f9fafb;
       --gray-100: #f3f4f6;
       --gray-200: #e5e7eb;
@@ -50,7 +50,7 @@
       padding: 20px 16px;
       font-size: 1.3rem;
       font-weight: 700;
-      color: var(--fox);
+      color: var(--green);
       border-bottom: 1px solid var(--gray-200);
       display: flex; align-items: center; gap: 8px;
     }
@@ -68,7 +68,7 @@
       border: none; background: none; width: 100%; text-align: left;
     }
     .nav-item:hover { background: var(--gray-100); color: var(--gray-800); }
-    .nav-item.active { background: var(--fox-light); color: var(--fox-dark); font-weight: 600; }
+    .nav-item.active { background: var(--green-light); color: var(--green-dark); font-weight: 600; }
     .nav-icon { font-size: 1.2rem; width: 24px; text-align: center; }
 
     /* Main content */
@@ -106,8 +106,8 @@
       transition: all 0.15s;
       display: inline-flex; align-items: center; gap: 6px;
     }
-    .btn-primary { background: var(--fox); color: white; }
-    .btn-primary:hover { background: var(--fox-dark); }
+    .btn-primary { background: var(--green); color: white; }
+    .btn-primary:hover { background: var(--green-dark); }
     .btn-secondary { background: var(--gray-100); color: var(--gray-800); }
     .btn-secondary:hover { background: var(--gray-200); }
     .btn-danger { background: #fee2e2; color: var(--red); }
@@ -129,8 +129,8 @@
     }
     .form-input:focus, .form-select:focus {
       outline: none;
-      border-color: var(--fox);
-      box-shadow: 0 0 0 3px rgba(232,98,26,0.1);
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(22,163,74,0.1);
     }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
@@ -167,7 +167,7 @@
     .badge {
       padding: 3px 8px; border-radius: 99px;
       font-size: 0.75rem; font-weight: 600;
-      background: var(--fox-light); color: var(--fox-dark);
+      background: var(--green-light); color: var(--green-dark);
     }
     .badge-m { background: #dbeafe; color: #1d4ed8; }
     .badge-w { background: #fce7f3; color: #be185d; }
@@ -208,7 +208,7 @@
       color: var(--gray-400); cursor: pointer; font-size: 0.85rem;
       transition: all 0.15s;
     }
-    .add-field-btn:hover { border-color: var(--fox); color: var(--fox); }
+    .add-field-btn:hover { border-color: var(--green); color: var(--green); }
     .remove-field-btn {
       background: none; border: none; color: var(--gray-400);
       cursor: pointer; font-size: 1.1rem; padding: 4px;
@@ -232,7 +232,7 @@
       pointer-events: none;
     }
     .toast.show { opacity: 1; }
-    .toast.success { background: var(--fox); }
+    .toast.success { background: var(--green); }
     .toast.error { background: var(--red); }
 
     /* Bottom nav (Mobile) */
@@ -251,7 +251,7 @@
       cursor: pointer; border: none; background: none;
       transition: color 0.15s;
     }
-    .bottom-nav-item.active { color: var(--fox); }
+    .bottom-nav-item.active { color: var(--green); }
     .bottom-nav-icon { font-size: 1.4rem; margin-bottom: 2px; }
 
     /* Mobile header */
@@ -263,7 +263,7 @@
       position: sticky; top: 0; z-index: 100;
       align-items: center; justify-content: space-between;
     }
-    .mobile-title { font-size: 1.1rem; font-weight: 700; color: var(--fox); }
+    .mobile-title { font-size: 1.1rem; font-weight: 700; color: var(--green); }
 
     /* Responsive */
     @media (max-width: 768px) {
@@ -306,12 +306,12 @@
       border: 1px solid var(--gray-200); border-radius: 8px;
       font-size: 0.95rem;
     }
-    .search-input:focus { outline: none; border-color: var(--fox); }
+    .search-input:focus { outline: none; border-color: var(--green); }
 
     /* Stats */
     .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
     .stat-card { background: white; border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); text-align: center; }
-    .stat-number { font-size: 2rem; font-weight: 700; color: var(--fox); }
+    .stat-number { font-size: 2rem; font-weight: 700; color: var(--green); }
     .stat-label { font-size: 0.8rem; color: var(--gray-400); margin-top: 2px; }
     @media (max-width: 480px) { .stats { grid-template-columns: 1fr 1fr; } }
 
@@ -328,10 +328,10 @@
       transition: all 0.15s;
     }
     .module-card.active {
-      border-color: var(--fox);
+      border-color: var(--green);
       cursor: pointer;
     }
-    .module-card.active:hover { box-shadow: 0 4px 12px rgba(232,98,26,0.15); transform: translateY(-1px); }
+    .module-card.active:hover { box-shadow: 0 4px 12px rgba(22,163,74,0.15); transform: translateY(-1px); }
     .module-card.inactive { opacity: 0.7; }
     .module-icon { font-size: 2rem; }
     .module-title { font-size: 1.1rem; font-weight: 700; color: var(--gray-800); }
@@ -345,7 +345,7 @@
       margin-top: 4px;
       width: fit-content;
     }
-    .badge-active { background: var(--fox-light); color: var(--fox-dark); }
+    .badge-active { background: var(--green-light); color: var(--green-dark); }
     .badge-wip { background: #fef3c7; color: #92400e; }
 
     /* Einstellungen */
@@ -366,23 +366,25 @@
     /* Stundenplan */
     .sp-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .sp-table { border-collapse: collapse; width: 100%; min-width: 720px; }
-    .sp-table thead th { background: var(--fox); color: white; padding: 10px 8px; font-size: 0.85rem; font-weight: 600; text-align: center; position: sticky; top: 0; z-index: 1; }
+    .sp-table thead th { background: var(--green); color: white; padding: 10px 8px; font-size: 0.85rem; font-weight: 600; text-align: center; position: sticky; top: 0; z-index: 1; }
     .sp-table thead th.sp-time-col { background: var(--gray-100); color: var(--gray-500); }
     .sp-table tbody tr:nth-child(even) { background: var(--gray-50); }
-    .sp-table tbody tr:nth-child(even) .sp-cell:focus-within { background: var(--fox-light); }
+    .sp-table tbody tr:nth-child(even) .sp-cell:focus-within { background: var(--green-light); }
     .sp-time { padding: 8px 6px; font-size: 0.78rem; color: var(--gray-500); font-weight: 700; text-align: center; white-space: nowrap; min-width: 72px; border-right: 2px solid var(--gray-200); }
     .sp-time-sub { font-weight: 400; font-size: 0.7rem; color: var(--gray-400); display: block; margin-top: 2px; }
     .sp-table td { border: 1px solid var(--gray-200); padding: 3px; vertical-align: top; }
     .sp-cell { display: flex; flex-direction: column; gap: 2px; padding: 4px; min-width: 120px; border-radius: 4px; transition: background 0.1s; }
-    .sp-cell:focus-within { background: var(--fox-light); }
+    .sp-cell:focus-within { background: var(--green-light); }
     .sp-fach { font-size: 0.85rem; font-weight: 700; border: none; border-bottom: 1px solid transparent; padding: 3px 4px; width: 100%; background: transparent; color: var(--gray-800); }
-    .sp-fach:focus { outline: none; border-bottom-color: var(--fox); }
+    .sp-fach:focus { outline: none; border-bottom-color: var(--green); }
     .sp-fach::placeholder { font-weight: 400; color: var(--gray-300); font-size: 0.8rem; }
-    .sp-klasse { font-size: 0.75rem; border: none; padding: 2px 4px; background: transparent; color: var(--fox-dark); width: 100%; cursor: pointer; }
+    .sp-klasse { font-size: 0.75rem; border: none; padding: 2px 4px; background: transparent; color: var(--green-dark); width: 100%; cursor: pointer; }
     .sp-klasse:focus { outline: none; }
     .sp-raum { font-size: 0.72rem; border: none; padding: 2px 4px; background: transparent; color: var(--gray-400); width: 100%; }
     .sp-raum:focus { outline: none; }
     .sp-raum::placeholder { color: var(--gray-300); }
+    .sp-fach-sel { font-size: 0.85rem; font-weight: 700; border: none; border-bottom: 1px solid transparent; padding: 3px 4px; width: 100%; background: transparent; color: var(--gray-800); cursor: pointer; }
+    .sp-fach-sel:focus { outline: none; border-bottom-color: var(--green); }
   </style>
 </head>
 <body>
@@ -553,6 +555,14 @@
       <div class="settings-section-title">Unterrichtszeiten</div>
       <div id="unterrichtszeiten-list"></div>
       <button class="btn btn-secondary btn-sm" onclick="addUnterrichtsstunde()" style="margin-top:8px;">＋ Stunde hinzufügen</button>
+    </div>
+
+    <!-- Meine Fächer -->
+    <div class="settings-section">
+      <div class="settings-section-title">Meine Fächer</div>
+      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">Diese Fächer stehen im Stundenplan und überall sonst als Auswahl zur Verfügung.</p>
+      <div id="faecher-list"></div>
+      <button class="btn btn-secondary btn-sm" onclick="addFach()" style="margin-top:8px;">＋ Fach hinzufügen</button>
     </div>
 
     <!-- Bundesland & Ferien -->
@@ -1147,6 +1157,7 @@ function applyEinstellungen(saved) {
   if (bl) loadFerien(bl);
 
   renderFreieTage(saved.freieTage || []);
+  renderFaecher(saved.faecher || []);
 }
 
 async function loadEinstellungen() {
@@ -1161,6 +1172,9 @@ async function saveEinstellungen() {
     bis: s.querySelector('[data-bis]').value,
   })).filter(s => s.von || s.bis);
 
+  const faecher = [...document.querySelectorAll('[data-fach]')]
+    .map(i => i.value.trim()).filter(Boolean);
+
   const freieTage = [...document.querySelectorAll('.freier-tag-row')].map(r => ({
     bezeichnung: r.querySelector('[data-ft-bez]').value.trim(),
     datum: r.querySelector('[data-ft-datum]').value,
@@ -1174,6 +1188,7 @@ async function saveEinstellungen() {
     unterrichtszeiten: slots,
     bundesland: document.getElementById('set-bundesland').value,
     freieTage,
+    faecher,
   };
   await sb.from('einstellungen').upsert({ id: 1, daten });
 }
@@ -1240,6 +1255,28 @@ function makeFreierTagRow(bez = '', datum = '') {
 
 function addFreierTag() {
   document.getElementById('freie-tage-list').appendChild(makeFreierTagRow());
+  autoSave();
+}
+
+// ── Fächer ──
+function renderFaecher(liste) {
+  const container = document.getElementById('faecher-list');
+  container.innerHTML = '';
+  (liste || []).forEach(f => container.appendChild(makeFachRow(f)));
+}
+
+function makeFachRow(name = '') {
+  const div = document.createElement('div');
+  div.className = 'freier-tag-row';
+  div.innerHTML = `
+    <input class="form-input" type="text" placeholder="z.B. Mathematik" value="${name}" data-fach oninput="autoSave()">
+    <button onclick="this.closest('.freier-tag-row').remove(); autoSave();" title="Entfernen">🗑</button>
+  `;
+  return div;
+}
+
+function addFach() {
+  document.getElementById('faecher-list').appendChild(makeFachRow());
   autoSave();
 }
 
@@ -1326,6 +1363,7 @@ function spZeitLabel(idx) {
 }
 
 function renderStundenplan() {
+  const faecher = spEinstellungen.faecher || [];
   let html = '<thead><tr><th class="sp-time-col">Stunde</th>';
   SP_TAGE.forEach(t => html += `<th>${t}</th>`);
   html += '</tr></thead><tbody>';
@@ -1336,21 +1374,30 @@ function renderStundenplan() {
     const lzStyle = isLZ ? 'background:#f0fdf4;' : '';
 
     html += `<tr style="${lzStyle}">
-      <td class="sp-time" style="${isLZ ? 'color:var(--fox-dark);font-style:italic;' : ''}">
+      <td class="sp-time" style="${isLZ ? 'color:var(--green-dark);font-style:italic;' : ''}">
         ${label}<span class="sp-time-sub">${zeit}</span>
       </td>`;
 
     for (let tag = 1; tag <= 5; tag++) {
       const e = spDaten[`${tag}-${stunde}`] || {};
-      const opts = allKlassen.map(k =>
+      const klassenOpts = allKlassen.map(k =>
         `<option value="${k.id}" ${e.klasse_id === k.id ? 'selected' : ''}>${k.name}</option>`
       ).join('');
+      const faecherOpts = faecher.map(f =>
+        `<option value="${f}" ${e.fach === f ? 'selected' : ''}>${f}</option>`
+      ).join('');
+      const faecherField = faecher.length > 0
+        ? `<select class="sp-fach-sel" onchange="saveSpZelle(${tag},${stunde})">
+            <option value="">– Fach –</option>${faecherOpts}
+           </select>`
+        : `<input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach (in Einstellungen anlegen)'}" value="${e.fach || ''}"
+            onchange="saveSpZelle(${tag},${stunde})">`;
+
       html += `<td style="${lzStyle}">
         <div class="sp-cell" data-tag="${tag}" data-st="${stunde}">
-          <input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach'}" value="${e.fach || ''}"
-            onchange="saveSpZelle(${tag},${stunde})">
+          ${faecherField}
           <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
-            <option value="">– Klasse –</option>${opts}
+            <option value="">– Klasse –</option>${klassenOpts}
           </select>
           <input class="sp-raum" type="text" placeholder="Raum (optional)" value="${e.raum || ''}"
             onchange="saveSpZelle(${tag},${stunde})">
@@ -1366,7 +1413,8 @@ function renderStundenplan() {
 
 async function saveSpZelle(wochentag, stunde) {
   const cell = document.querySelector(`.sp-cell[data-tag="${wochentag}"][data-st="${stunde}"]`);
-  const fach = cell.querySelector('.sp-fach').value.trim();
+  const fachEl = cell.querySelector('.sp-fach-sel') || cell.querySelector('.sp-fach');
+  const fach = fachEl ? fachEl.value.trim() : '';
   const klasse_id = cell.querySelector('.sp-klasse').value || null;
   const raum = cell.querySelector('.sp-raum').value.trim();
 
