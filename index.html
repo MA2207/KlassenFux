@@ -2075,10 +2075,10 @@ function renderUpWoche() {
 
       const sp = upSpDaten[`${tagNr}-${stunde}`];
       const plan = upPlanDaten[`${tagNr}-${stunde}`] || {};
-      const effFach = ('fach' in plan) ? (plan.fach ?? '') : (sp?.fach || '');
-      const effKlasseId = ('klasse_id' in plan) ? (plan.klasse_id ?? '') : (sp?.klasse_id || '');
+      const effFach = (plan.fach != null) ? plan.fach : (sp?.fach || '');
+      const effKlasseId = (plan.klasse_id != null) ? plan.klasse_id : (sp?.klasse_id || '');
       const klasseObj = effKlasseId ? upAllKlassen.find(k => k.id === effKlasseId) : null;
-      const istAbgeaendert = ('fach' in plan && plan.fach !== sp?.fach) || ('klasse_id' in plan && plan.klasse_id !== sp?.klasse_id);
+      const istAbgeaendert = (plan.fach != null && plan.fach !== sp?.fach) || (plan.klasse_id != null && plan.klasse_id !== sp?.klasse_id);
 
       if (!sp) {
         html += `<td style="background:var(--gray-50);border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-200);"></td>`;
@@ -2195,12 +2195,12 @@ function renderUpTag(tagNr) {
     const zeit = upZeitLabel(zeitIdx);
     const isLast = idx === stundenAmTag.length - 1;
 
-    // Effektive Werte: Plan-Override hat Vorrang vor Stundenplan
-    const effFach = ('fach' in plan) ? (plan.fach ?? '') : (sp.fach || '');
-    const effKlasseId = ('klasse_id' in plan) ? (plan.klasse_id ?? '') : (sp.klasse_id || '');
+    // Effektive Werte: Plan-Override hat Vorrang (null = nicht geändert, nur gesetzter Wert = Override)
+    const effFach = (plan.fach != null) ? plan.fach : (sp.fach || '');
+    const effKlasseId = (plan.klasse_id != null) ? plan.klasse_id : (sp.klasse_id || '');
     const effKlasseObj = effKlasseId ? upAllKlassen.find(k => k.id === effKlasseId) : null;
-    const fachGeaendert = ('fach' in plan) && plan.fach !== sp.fach;
-    const klasseGeaendert = ('klasse_id' in plan) && plan.klasse_id !== sp.klasse_id;
+    const fachGeaendert = (plan.fach != null) && plan.fach !== sp.fach;
+    const klasseGeaendert = (plan.klasse_id != null) && plan.klasse_id !== sp.klasse_id;
     const dotColor = effKlasseObj?.farbe || '#d1d5db';
 
     const tagStyle = `display:flex;align-items:stretch;border:1px solid var(--gray-200);border-radius:4px;overflow:hidden;margin-bottom:4px;`;
