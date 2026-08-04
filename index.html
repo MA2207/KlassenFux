@@ -403,6 +403,9 @@
     <button class="nav-item" onclick="showPage('stundenplan')">
       <span class="nav-icon">📅</span> Stundenplan
     </button>
+    <button class="nav-item" onclick="showPage('unterrichtsplanung')">
+      <span class="nav-icon">📓</span> Unterrichtsplanung
+    </button>
     <button class="nav-item" onclick="showPage('klassen')">
       <span class="nav-icon">🏫</span> Klassen
     </button>
@@ -615,6 +618,29 @@
 
 </div>
 
+  <!-- UNTERRICHTSPLANUNG -->
+  <div id="page-unterrichtsplanung" class="hidden">
+    <div class="page-header">
+      <div class="page-title">Unterrichtsplanung</div>
+    </div>
+
+    <!-- Wochennavigation -->
+    <div id="up-week-nav" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--white);border-radius:12px;border:1px solid var(--gray-200);margin-bottom:14px;">
+      <button class="btn btn-secondary btn-sm" onclick="upWechselWoche(-1)">← Vorwoche</button>
+      <div style="text-align:center">
+        <div id="up-week-label" style="font-size:1rem;font-weight:600;color:var(--gray-800)"></div>
+        <div id="up-week-dates" style="font-size:0.78rem;color:var(--gray-400);margin-top:2px"></div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="upWechselWoche(1)">Nächste Woche →</button>
+    </div>
+
+    <!-- Tages-Tabs -->
+    <div id="up-tabs" style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px;"></div>
+
+    <!-- Tages-Inhalt -->
+    <div id="up-day-content"></div>
+  </div>
+
 <!-- Bottom nav (Mobile) -->
 <div class="bottom-nav">
   <div class="bottom-nav-items">
@@ -623,6 +649,9 @@
     </button>
     <button class="bottom-nav-item" onclick="showPage('stundenplan')">
       <span class="bottom-nav-icon">📅</span>Stundenplan
+    </button>
+    <button class="bottom-nav-item" onclick="showPage('unterrichtsplanung')">
+      <span class="bottom-nav-icon">📓</span>Planung
     </button>
     <button class="bottom-nav-item" onclick="showPage('klassen')">
       <span class="bottom-nav-icon">🏫</span>Klassen
@@ -765,7 +794,7 @@ let editingSchuelerId = null;
 let currentDetailId = null;
 
 // ── Navigation ──
-const ALL_PAGES = ['dashboard','stundenplan','klassen','schueler','einstellungen'];
+const ALL_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen'];
 function showPage(page) {
   ALL_PAGES.forEach(p => {
     document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
@@ -778,6 +807,7 @@ function showPage(page) {
   if (page === 'dashboard') loadStats();
   if (page === 'einstellungen') loadEinstellungen();
   if (page === 'stundenplan') loadStundenplan();
+  if (page === 'unterrichtsplanung') loadUnterrichtsplanung();
 }
 
 // ── Toast ──
@@ -1515,6 +1545,226 @@ async function saveSpZelle(wochentag, stunde) {
   if (ind) {
     ind.textContent = error ? '❌ Fehler' : '✓ gespeichert';
     setTimeout(() => ind.textContent = '', 2000);
+  }
+}
+
+// ── UNTERRICHTSPLANUNG ──
+let upKW = null;        // aktuelle Kalenderwoche
+let upJahr = null;      // aktuelles Jahr
+let upAktivTag = 1;     // 1=Mo … 5=Fr
+let upSpDaten = {};     // Stundenplan-Daten für die Woche
+let upPlanDaten = {};   // Unterrichtsplanung-Einträge { 'tag-stunde': row }
+let upAllKlassen = [];
+let upEinst = {};
+let upSaveTimers = {};
+
+// Hilfsfunktion: ISO-Kalenderwoche berechnen
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return { kw: Math.ceil((((d - yearStart) / 86400000) + 1) / 7), jahr: d.getUTCFullYear() };
+}
+
+function getMondayOfWeek(kw, jahr) {
+  const jan4 = new Date(Date.UTC(jahr, 0, 4));
+  const dayOfWeek = jan4.getUTCDay() || 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - dayOfWeek + 1 + (kw - 1) * 7);
+  return monday;
+}
+
+function upWechselWoche(delta) {
+  let kw = upKW + delta;
+  let jahr = upJahr;
+  if (kw < 1) { jahr--; kw = getISOWeek(new Date(jahr, 11, 28)).kw; }
+  if (kw > 52) {
+    const lastKW = getISOWeek(new Date(jahr, 11, 28)).kw;
+    if (kw > lastKW) { jahr++; kw = 1; }
+  }
+  upKW = kw; upJahr = jahr;
+  loadUnterrichtsplanung();
+}
+
+async function loadUnterrichtsplanung() {
+  if (!upKW) {
+    const today = new Date();
+    const iso = getISOWeek(today);
+    upKW = iso.kw; upJahr = iso.jahr;
+  }
+
+  // Labels
+  const monday = getMondayOfWeek(upKW, upJahr);
+  const friday = new Date(monday); friday.setUTCDate(monday.getUTCDate() + 4);
+  document.getElementById('up-week-label').textContent = `KW ${upKW} · ${upJahr}`;
+  const fmt = d => d.toLocaleDateString('de-DE', { day:'numeric', month:'long', timeZone:'UTC' });
+  document.getElementById('up-week-dates').textContent = `${fmt(monday)} – ${fmt(friday)}`;
+
+  // Daten laden
+  const [{ data: einst }, { data: klassen }, { data: spRows }, { data: planRows }] = await Promise.all([
+    sb.from('einstellungen').select('daten').eq('id', 1).single(),
+    sb.from('klassen').select('id, name, farbe').order('name'),
+    sb.from('stundenplan').select('*'),
+    sb.from('unterrichtsplanung').select('*').eq('kalenderwoche', upKW).eq('jahr', upJahr),
+  ]);
+
+  upEinst = einst?.daten || {};
+  upAllKlassen = klassen || [];
+  upSpDaten = {};
+  (spRows || []).forEach(r => { upSpDaten[`${r.wochentag}-${r.stunde}`] = r; });
+  upPlanDaten = {};
+  (planRows || []).forEach(r => { upPlanDaten[`${r.wochentag}-${r.stunde}`] = r; });
+
+  renderUpTabs();
+  renderUpTag(upAktivTag);
+}
+
+function renderUpTabs() {
+  const tage = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
+  const monday = getMondayOfWeek(upKW, upJahr);
+  const tabs = document.getElementById('up-tabs');
+  tabs.innerHTML = tage.map((t, i) => {
+    const d = new Date(monday); d.setUTCDate(monday.getUTCDate() + i);
+    const tagNr = i + 1;
+    const label = `${t}, ${d.getUTCDate()}.${d.getUTCMonth()+1}.`;
+    const isActive = tagNr === upAktivTag;
+    return `<button onclick="upWechselTag(${tagNr})" style="
+      padding:5px 13px; border-radius:20px; font-size:12px; cursor:pointer; border: 1px solid ${isActive ? 'var(--gray-400)' : 'var(--gray-200)'};
+      background:${isActive ? 'var(--white)' : 'var(--gray-50)'}; color:${isActive ? 'var(--gray-800)' : 'var(--gray-400)'};
+      font-weight:${isActive ? '600' : '400'}; white-space:nowrap;">${label}</button>`;
+  }).join('');
+}
+
+function upWechselTag(tagNr) {
+  upAktivTag = tagNr;
+  renderUpTabs();
+  renderUpTag(tagNr);
+}
+
+function upZeitLabel(idx) {
+  const slots = upEinst.unterrichtszeiten || [];
+  if (slots[idx] && (slots[idx].von || slots[idx].bis)) {
+    return `${slots[idx].von || ''}${slots[idx].von && slots[idx].bis ? '–' : ''}${slots[idx].bis || ''}`;
+  }
+  return '';
+}
+
+function renderUpTag(tagNr) {
+  const tageNamen = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag'];
+  const monday = getMondayOfWeek(upKW, upJahr);
+  const datum = new Date(monday); datum.setUTCDate(monday.getUTCDate() + tagNr - 1);
+  const datumStr = datum.toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'UTC' });
+
+  // Stunden die an diesem Tag im Stundenplan stehen
+  const stundenAmTag = SP_STUNDEN.filter(s => upSpDaten[`${tagNr}-${s.stunde}`]);
+
+  const container = document.getElementById('up-day-content');
+
+  if (stundenAmTag.length === 0) {
+    container.innerHTML = `
+      <div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;color:var(--gray-400);">
+        <div style="font-size:2rem;margin-bottom:8px;">📭</div>
+        <div>Kein Unterricht an diesem Tag laut Stundenplan.</div>
+      </div>`;
+    return;
+  }
+
+  let html = `
+    <div style="background:var(--white);border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+        <div style="font-weight:600;font-size:0.95rem;">${datumStr}</div>
+        <span id="up-save-ind" style="font-size:11px;color:var(--gray-400);"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:160px 1fr;border-bottom:1px solid var(--gray-200);background:var(--gray-50);">
+        <div style="padding:7px 14px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;border-right:1px solid var(--gray-200);">Stunde / Fach / Klasse</div>
+        <div style="padding:7px 14px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;">Einträge</div>
+      </div>`;
+
+  stundenAmTag.forEach((row, idx) => {
+    const { stunde, label, isLZ } = row;
+    const sp = upSpDaten[`${tagNr}-${stunde}`] || {};
+    const plan = upPlanDaten[`${tagNr}-${stunde}`] || {};
+    const klasseObj = sp.klasse_id ? upAllKlassen.find(k => k.id === sp.klasse_id) : null;
+    const zeitIdx = SP_STUNDEN.findIndex(s => s.stunde === stunde);
+    const zeit = upZeitLabel(zeitIdx);
+    const isLast = idx === stundenAmTag.length - 1;
+    const dotColor = klasseObj?.farbe || '#d1d5db';
+    const dotStyle = `width:9px;height:9px;border-radius:50%;background:${dotColor};display:inline-block;margin-right:5px;vertical-align:middle;`;
+
+    const tagStyle = `display:flex;align-items:stretch;border:1px solid var(--gray-200);border-radius:4px;overflow:hidden;margin-bottom:5px;`;
+    const tagLabelStyle = (bg, color) => `width:44px;min-width:44px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:${bg};color:${color};border-right:1px solid var(--gray-200);letter-spacing:.03em;`;
+    const inpStyle = `border:none;padding:5px 8px;width:100%;font-size:12px;background:transparent;color:var(--gray-800);font-family:inherit;resize:none;line-height:1.5;outline:none;`;
+    const inpSmStyle = `border:none;padding:5px 8px;width:100%;font-size:11px;background:transparent;color:var(--gray-700);font-family:inherit;resize:none;line-height:1.4;outline:none;`;
+
+    html += `
+      <div style="display:grid;grid-template-columns:160px 1fr;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}">
+        <div style="padding:12px 14px;border-right:1px solid var(--gray-200);display:flex;flex-direction:column;gap:6px;justify-content:center;">
+          <div>
+            <span style="font-weight:600;font-size:1rem;${isLZ ? 'color:var(--gray-400);' : ''}">${label} Stunde</span><br>
+            <span style="font-size:11px;color:var(--gray-400);">${zeit}</span>
+          </div>
+          ${sp.fach ? `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:var(--green-light);color:var(--green-dark);">${sp.fach}</span>` : ''}
+          ${klasseObj ? `<div style="font-size:12px;color:var(--gray-500);"><span style="${dotStyle}"></span>${klasseObj.name}</div>` : ''}
+        </div>
+        <div style="padding:10px 12px;display:flex;flex-direction:column;gap:5px;${isLZ ? 'background:var(--gray-50);' : ''}">
+          <div style="${tagStyle}">
+            <span style="${tagLabelStyle('#dbeafe','#1e40af')}">Inhalt</span>
+            <textarea style="${inpStyle}" rows="2" placeholder="Was wurde erarbeitet, besprochen, geübt…"
+              oninput="upAutoSave(${tagNr},${stunde},'inhalt',this.value)"
+              data-up-field="${tagNr}-${stunde}-inhalt">${plan.inhalt || ''}</textarea>
+          </div>
+          ${!isLZ ? `<div style="${tagStyle}">
+            <span style="${tagLabelStyle('#dcfce7','#166534')}">HA</span>
+            <textarea style="${inpSmStyle}" rows="1" placeholder="Hausaufgaben…"
+              oninput="upAutoSave(${tagNr},${stunde},'hausaufgaben',this.value)"
+              data-up-field="${tagNr}-${stunde}-hausaufgaben">${plan.hausaufgaben || ''}</textarea>
+          </div>` : ''}
+          <div style="${tagStyle}">
+            <span style="${tagLabelStyle('#f1f5f9','#64748b')}">Notiz</span>
+            <textarea style="${inpSmStyle}" rows="1" placeholder="…"
+              oninput="upAutoSave(${tagNr},${stunde},'notiz',this.value)"
+              data-up-field="${tagNr}-${stunde}-notiz">${plan.notiz || ''}</textarea>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function upAutoSave(tagNr, stunde, feld, wert) {
+  const key = `${tagNr}-${stunde}`;
+  if (!upPlanDaten[key]) upPlanDaten[key] = { wochentag: tagNr, stunde, kalenderwoche: upKW, jahr: upJahr };
+  upPlanDaten[key][feld] = wert;
+
+  const timerKey = `${key}-${feld}`;
+  clearTimeout(upSaveTimers[timerKey]);
+  upSaveTimers[timerKey] = setTimeout(() => upSaveZeile(tagNr, stunde), 600);
+
+  const ind = document.getElementById('up-save-ind');
+  if (ind) ind.textContent = '…';
+}
+
+async function upSaveZeile(tagNr, stunde) {
+  const key = `${tagNr}-${stunde}`;
+  const row = upPlanDaten[key];
+  if (!row) return;
+
+  const { error } = await sb.from('unterrichtsplanung').upsert({
+    wochentag: tagNr,
+    stunde,
+    kalenderwoche: upKW,
+    jahr: upJahr,
+    inhalt: row.inhalt || '',
+    hausaufgaben: row.hausaufgaben || '',
+    notiz: row.notiz || '',
+  }, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' });
+
+  const ind = document.getElementById('up-save-ind');
+  if (ind) {
+    ind.textContent = error ? '❌ Fehler' : '✓ gespeichert';
+    setTimeout(() => { if (ind) ind.textContent = ''; }, 2000);
   }
 }
 
