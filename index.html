@@ -2230,14 +2230,11 @@ async function upZuHeute() {
   const { kw, jahr } = getISOWeek(heute);
   upKW = kw;
   upJahr = jahr;
-  const tagNr = heute.getDay() === 0 ? 5 : heute.getDay() > 5 ? 5 : heute.getDay();
-  upAktivTag = tagNr;
+  const wd = heute.getDay(); // 0=So, 1=Mo...5=Fr, 6=Sa
+  upAktivTag = (wd === 0 || wd === 6) ? 1 : wd;
   upAnsicht = 'tag';
-  await upLadeWoche();
-  const btnTag = document.getElementById('up-btn-tag');
-  const btnWoche = document.getElementById('up-btn-woche');
-  if (btnTag) { btnTag.style.background = 'var(--white)'; btnTag.style.fontWeight = '600'; btnTag.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'; btnTag.style.color = 'var(--gray-800)'; }
-  if (btnWoche) { btnWoche.style.background = 'transparent'; btnWoche.style.fontWeight = '400'; btnWoche.style.boxShadow = 'none'; btnWoche.style.color = 'var(--gray-500)'; }
+  await loadUnterrichtsplanung();
+  upWechselAnsicht('tag');
 }
 
 function upZeigeLoeschDialog() {
