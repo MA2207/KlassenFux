@@ -648,6 +648,46 @@
       <div id="ferien-container"></div>
     </div>
 
+    <!-- Schulhalbjahre -->
+    <div class="settings-section">
+      <div class="settings-section-title">Schulhalbjahre</div>
+      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 16px;">
+        Zeitraum der beiden Halbjahre festlegen. Wird für die automatische Stundenplan-Versionszuordnung in der Planung verwendet.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div>
+          <div style="font-size:0.8rem;font-weight:600;color:var(--gray-600);margin-bottom:8px;">1. Halbjahr</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0;">
+              <label class="form-label">Beginn</label>
+              <input class="form-input" type="date" id="set-hj1-start" oninput="autoSave()">
+            </div>
+            <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0;">
+              <label class="form-label">Ende</label>
+              <input class="form-input" type="date" id="set-hj1-ende" oninput="autoSave()">
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:0.8rem;font-weight:600;color:var(--gray-600);margin-bottom:8px;">2. Halbjahr</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0;">
+              <label class="form-label">Beginn</label>
+              <input class="form-input" type="date" id="set-hj2-start" oninput="autoSave()">
+            </div>
+            <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0;">
+              <label class="form-label">Ende</label>
+              <input class="form-input" type="date" id="set-hj2-ende" oninput="autoSave()">
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="hjVersionenAnlegen()" style="gap:6px;">
+        📅 Stundenplan-Versionen für beide Halbjahre anlegen
+      </button>
+      <div id="hj-versionen-status" style="font-size:0.8rem;color:var(--gray-400);margin-top:8px;"></div>
+    </div>
+
     <!-- Unterrichtsfreie Tage -->
     <div class="settings-section">
       <div class="settings-section-title">Unterrichtsfreie Tage</div>
@@ -1235,6 +1275,10 @@ function applyEinstellungen(saved) {
   document.getElementById('set-schulname').value = saved.schulname || '';
   document.getElementById('set-schuladresse').value = saved.schuladresse || '';
   document.getElementById('set-schuljahr').value = saved.schuljahr || '';
+  document.getElementById('set-hj1-start').value = saved.hj1_start || '';
+  document.getElementById('set-hj1-ende').value = saved.hj1_ende || '';
+  document.getElementById('set-hj2-start').value = saved.hj2_start || '';
+  document.getElementById('set-hj2-ende').value = saved.hj2_ende || '';
 
   unterrichtsstunden = saved.unterrichtszeiten || [];
   renderUnterrichtszeiten();
@@ -1277,6 +1321,10 @@ async function saveEinstellungen() {
     schulname: document.getElementById('set-schulname').value.trim(),
     schuladresse: document.getElementById('set-schuladresse').value.trim(),
     schuljahr: document.getElementById('set-schuljahr').value.trim(),
+    hj1_start: document.getElementById('set-hj1-start').value || null,
+    hj1_ende: document.getElementById('set-hj1-ende').value || null,
+    hj2_start: document.getElementById('set-hj2-start').value || null,
+    hj2_ende: document.getElementById('set-hj2-ende').value || null,
     unterrichtszeiten: slots,
     bundesland: document.getElementById('set-bundesland').value,
     freieTage,
@@ -1294,6 +1342,40 @@ function autoSave() {
     await saveEinstellungen();
     if (ind) { ind.textContent = '✓ gespeichert'; setTimeout(() => ind.textContent = '', 2000); }
   }, 600);
+}
+
+async function hjVersionenAnlegen() {
+  const hj1_start = document.getElementById('set-hj1-start').value;
+  const hj1_ende = document.getElementById('set-hj1-ende').value;
+  const hj2_start = document.getElementById('set-hj2-start').value;
+  const hj2_ende = document.getElementById('set-hj2-ende').value;
+  const schuljahr = document.getElementById('set-schuljahr').value.trim() || '';
+  const statusEl = document.getElementById('hj-versionen-status');
+
+  if (!hj1_start || !hj2_start) {
+    statusEl.textContent = '⚠ Bitte mindestens den Beginn beider Halbjahre eintragen.';
+    statusEl.style.color = '#f59e0b';
+    return;
+  }
+
+  statusEl.textContent = '⏳ Wird angelegt…';
+  statusEl.style.color = 'var(--gray-400)';
+
+  const versionen = [
+    { name: `1. Halbjahr${schuljahr ? ' ' + schuljahr : ''}`, gueltig_ab: hj1_start, gueltig_bis: hj1_ende || null },
+    { name: `2. Halbjahr${schuljahr ? ' ' + schuljahr : ''}`, gueltig_ab: hj2_start, gueltig_bis: hj2_ende || null },
+  ];
+
+  const { error } = await sb.from('stundenplan_versionen').insert(versionen);
+  if (error) {
+    statusEl.textContent = '❌ Fehler: ' + error.message;
+    statusEl.style.color = 'var(--red)';
+    return;
+  }
+
+  statusEl.textContent = '✓ Beide Halbjahre als Stundenplan-Versionen angelegt!';
+  statusEl.style.color = 'var(--green)';
+  setTimeout(() => { statusEl.textContent = ''; }, 3000);
 }
 
 function renderUnterrichtszeiten() {
