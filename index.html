@@ -2937,7 +2937,8 @@ function kdRenderNotenErfassen() {
           </div>
         </div>
         <div style="font-size:11px;color:var(--gray-400);white-space:nowrap;">${nFuerE.length}/${kdSchueler.length}</div>
-        <button onclick="event.stopPropagation();kdNotenEintragLoeschen('${e.id}')" style="background:none;border:none;color:var(--gray-300);font-size:15px;cursor:pointer;padding:2px 4px;">🗑</button>
+        <button onclick="event.stopPropagation();kdNotenEintragBearbeiten('${e.id}')" style="background:none;border:none;color:var(--gray-300);font-size:14px;cursor:pointer;padding:2px 4px;" title="Bearbeiten">✏️</button>
+        <button onclick="event.stopPropagation();kdNotenEintragLoeschen('${e.id}')" style="background:none;border:none;color:var(--gray-300);font-size:15px;cursor:pointer;padding:2px 4px;" title="Löschen">🗑</button>
         <span style="font-size:12px;color:${isAktiv?'#1d4ed8':'var(--gray-400)'};">${isAktiv?'▲':'▼'}</span>
       </div>`;
 
@@ -3114,41 +3115,56 @@ function kdRenderNotenUebersicht() {
   return html;
 }
 
-// Modal: Neuer Notenanlass
-function kdNotenNeuerEintrag() {
+// Modal: Neuer / Bestehender Notenanlass
+let kdNotenEditId = null;
+
+function kdNotenEintragBearbeiten(id) {
+  kdNotenNeuerEintrag(id);
+}
+
+function kdNotenNeuerEintrag(editId = null) {
+  kdNotenEditId = editId;
+  const bearbeiten = kdNotenEintraege.find(e => e.id === editId) || null;
   const faecher = [...new Set(kdUnterricht.map(r => r.fach||r._spFach).filter(Boolean))].sort();
   const heute = new Date().toISOString().slice(0,10);
   const el = document.createElement('div');
   el.id = 'kd-noten-modal';
   el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center;';
+  const vTitel = bearbeiten?.titel || '';
+  const vDatum = bearbeiten?.datum || heute;
+  const vFach = bearbeiten?.fach || '';
+  const vKat = bearbeiten?.kategorie_id || '';
+  const vPunkte = !!bearbeiten?.ist_punkte_eintrag;
+  const vGesamt = bearbeiten?.gesamtpunktzahl ?? '';
   el.innerHTML = `
     <div style="background:white;border-radius:16px;padding:24px;width:90%;max-width:440px;max-height:90vh;overflow-y:auto;">
-      <h3 style="margin:0 0 16px;font-size:16px;color:var(--gray-800);">Neuer Notenanlass</h3>
+      <h3 style="margin:0 0 16px;font-size:16px;color:var(--gray-800);">${bearbeiten ? 'Notenanlass bearbeiten' : 'Neuer Notenanlass'}</h3>
       <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:4px;">Titel</label>
-      <input id="kd-noten-titel" placeholder="z.B. Schulaufgabe 1 / Abfrage" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:12px;">
+      <input id="kd-noten-titel" value="${vTitel.replace(/"/g,'&quot;')}" placeholder="z.B. Schulaufgabe 1 / Abfrage" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:12px;">
       <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:4px;">Datum</label>
-      <input id="kd-noten-datum" type="date" value="${heute}" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:12px;">
+      <input id="kd-noten-datum" type="date" value="${vDatum}" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:12px;">
       <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:4px;">Fach</label>
       <select id="kd-noten-fach" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:12px;">
         <option value="">– kein Fach –</option>
-        ${faecher.map(f=>`<option value="${f}" ${f===kdNotenFachFilter?'selected':''}>${f}</option>`).join('')}
+        ${faecher.map(f=>`<option value="${f}" ${f===(vFach||kdNotenFachFilter)?'selected':''}>${f}</option>`).join('')}
       </select>
       <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:4px;">Kategorie</label>
       <select id="kd-noten-kat" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:12px;">
         <option value="">– keine –</option>
-        ${kdNotenKat.map(k=>`<option value="${k.id}">${k.hauptkat==='muendlich'?'🗣':'✏️'} ${k.name}</option>`).join('')}
+        ${kdNotenKat.map(k=>`<option value="${k.id}" ${k.id===vKat?'selected':''}>${k.hauptkat==='muendlich'?'🗣':'✏️'} ${k.name}</option>`).join('')}
       </select>
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f0fdf4;border-radius:8px;margin-bottom:12px;">
-        <input type="checkbox" id="kd-noten-punkte" onchange="document.getElementById('kd-noten-punkte-block').style.display=this.checked?'block':'none'" style="width:16px;height:16px;cursor:pointer;">
+        <input type="checkbox" id="kd-noten-punkte" ${vPunkte?'checked':''} onchange="document.getElementById('kd-noten-punkte-block').style.display=this.checked?'block':'none'" style="width:16px;height:16px;cursor:pointer;">
         <label for="kd-noten-punkte" style="font-size:12px;font-weight:700;color:#15803d;cursor:pointer;">Punkte-Modus (mit Notenschlüssel)</label>
       </div>
-      <div id="kd-noten-punkte-block" style="display:none;margin-bottom:12px;">
+      <div id="kd-noten-punkte-block" style="display:${vPunkte?'block':'none'};margin-bottom:12px;">
         <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:4px;">Gesamtpunktzahl</label>
-        <input id="kd-noten-gesamt" type="number" min="1" placeholder="z.B. 30" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;">
+        <input id="kd-noten-gesamt" type="number" min="1" value="${vGesamt}" placeholder="z.B. 30" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;">
+        ${bearbeiten ? `<p style="font-size:11px;color:var(--gray-400);margin:6px 0 0;">Wird die Gesamtpunktzahl geändert, werden alle bereits eingetragenen Punkte automatisch neu in Noten umgerechnet.</p>` : ''}
       </div>
       <div style="display:flex;gap:8px;">
         <button onclick="document.getElementById('kd-noten-modal').remove()" style="flex:1;padding:10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:white;color:var(--gray-600);">Abbrechen</button>
-        <button onclick="kdNotenEintragSpeichern()" style="flex:1;padding:10px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#1d4ed8;color:white;">Erstellen</button>
+        <button onclick="kdNotenEintragSpeichern()" style="flex:1;padding:10px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:#1d4ed8;color:white;">${bearbeiten ? 'Speichern' : 'Erstellen'}</button>
       </div>
     </div>`;
   document.body.appendChild(el);
@@ -3163,11 +3179,36 @@ async function kdNotenEintragSpeichern() {
   const gesamt = isPunkte ? parseFloat(document.getElementById('kd-noten-gesamt').value) : null;
   if (!titel || !datum) { alert('Bitte Titel und Datum angeben.'); return; }
   if (isPunkte && (!gesamt || gesamt <= 0)) { alert('Bitte eine gültige Gesamtpunktzahl angeben.'); return; }
-  const { data, error } = await sb.from('noteneintraege').insert({
-    klasse_id: kdAktiveKlasseId, fach, datum, titel, kategorie_id: katId,
-    ist_punkte_eintrag: isPunkte, gesamtpunktzahl: gesamt
-  }).select().single();
-  if (!error && data) kdNotenAktEintragId = data.id;
+
+  if (kdNotenEditId) {
+    const alt = kdNotenEintraege.find(e => e.id === kdNotenEditId);
+    await sb.from('noteneintraege').update({
+      fach, datum, titel, kategorie_id: katId,
+      ist_punkte_eintrag: isPunkte, gesamtpunktzahl: gesamt
+    }).eq('id', kdNotenEditId);
+
+    // Bei Punkte-Einträgen: bestehende Punktwerte neu in Noten umrechnen (z.B. nach Änderung der Gesamtpunktzahl)
+    if (isPunkte && gesamt) {
+      const betroffene = kdNotenDaten.filter(n => n.noteneintrag_id === kdNotenEditId && n.punkte_erreicht !== null && n.punkte_erreicht !== undefined);
+      for (const n of betroffene) {
+        const prozent = Math.min(100, Math.max(0, (n.punkte_erreicht / gesamt) * 100));
+        const wert = kdProzentZuNote(prozent);
+        await sb.from('noten').update({ wert }).eq('id', n.id);
+      }
+    } else if (!isPunkte && alt?.ist_punkte_eintrag) {
+      // Wechsel von Punkte- zu Notenmodus: gespeicherte Punktwerte entfernen (Note bleibt als manueller Wert bestehen)
+      await sb.from('noten').update({ punkte_erreicht: null }).eq('noteneintrag_id', kdNotenEditId);
+    }
+    kdNotenAktEintragId = kdNotenEditId;
+  } else {
+    const { data, error } = await sb.from('noteneintraege').insert({
+      klasse_id: kdAktiveKlasseId, fach, datum, titel, kategorie_id: katId,
+      ist_punkte_eintrag: isPunkte, gesamtpunktzahl: gesamt
+    }).select().single();
+    if (!error && data) kdNotenAktEintragId = data.id;
+  }
+
+  kdNotenEditId = null;
   document.getElementById('kd-noten-modal')?.remove();
   await kdLadeNoten(); kdRenderNoten();
 }
