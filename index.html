@@ -1612,9 +1612,11 @@ function kdRenderAnwesenheit() {
 
   // Vergangene Stunden (KW ≤ aktuelle KW)
   const heute = new Date();
-  // Stunden bis einschließlich heute (exaktes Datum, nicht nur KW)
+  // Alle Stunden des Schuljahres anzeigen (auch zukünftige – Lehrer können vorausplanen)
   const heuteEnde = new Date(heute); heuteEnde.setUTCHours(23, 59, 59, 999);
-  const vergangenStunden = kdUnterricht.filter(r => {
+  const vergangenStunden = kdUnterricht.slice(); // alle Stunden
+  // Für Übersicht nur vergangene/heutige Stunden (macht dort mehr Sinn)
+  const vergangenFuerUebersicht = kdUnterricht.filter(r => {
     const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
     return datum <= heuteEnde;
   });
@@ -1631,7 +1633,7 @@ function kdRenderAnwesenheit() {
 
   html += kdAnwAnsicht === 'erfassen'
     ? kdRenderAnwErfassen(vergangenStunden)
-    : kdRenderAnwUebersicht(vergangenStunden);
+    : kdRenderAnwUebersicht(vergangenFuerUebersicht);
 
   container.innerHTML = html;
 }
@@ -1640,18 +1642,10 @@ function kdRenderAnwErfassen(vergangenStunden) {
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
 
   if (vergangenStunden.length === 0) {
-    // Nächste Stunde ermitteln für hilfreiche Nachricht
-    const naechste = kdUnterricht.length > 0 ? kdUnterricht[0] : null;
-    let hinweis = 'Es sind noch keine Stunden für heute oder früher vorhanden.';
-    if (naechste) {
-      const datum = kdDatumAusKW(naechste.kalenderwoche, naechste.jahr, naechste.wochentag);
-      const datumStr = datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC'});
-      hinweis = `Die erste Schulstunde findet am <strong>${datumStr}</strong> statt.<br>Ab dann kannst du hier die Anwesenheit erfassen.`;
-    }
     return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
       <div style="font-size:2.5rem;margin-bottom:12px;">📅</div>
-      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Noch keine Stunden verfügbar</div>
-      <div style="font-size:13px;line-height:1.7;">${hinweis}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Stunden gefunden</div>
+      <div style="font-size:13px;line-height:1.7;">Weise dieser Klasse im Stundenplan Stunden zu –<br>sie erscheinen dann hier automatisch.</div>
     </div>`;
   }
 
@@ -1675,7 +1669,9 @@ function kdRenderAnwErfassen(vergangenStunden) {
           const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
           const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'UTC'});
           const fachLabel = (r.fach||r._spFach) ? ` (${r.fach||r._spFach})` : '';
-          return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]} ${datumStr} · ${r.stunde}. Std.${fachLabel}</option>`;
+          const istZukunft = datum > heuteEnde;
+          const zukunftLabel = istZukunft ? ' 📅' : '';
+          return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]} ${datumStr} · ${r.stunde}. Std.${fachLabel}${zukunftLabel}</option>`;
         }).join('')}
       </select>
     </div>`;
