@@ -3355,6 +3355,8 @@ function kdRenderNotenUebersicht() {
   const fmt = (v) => v == null ? '–' : v.toFixed(2).replace('.', ',');
   const zellStil = (v) => `padding:6px 10px;text-align:center;font-size:12px;white-space:nowrap;min-width:56px;${v != null && v >= 4 ? 'color:#dc2626;font-weight:700;' : 'color:var(--gray-700);'}`;
   const kuerzel = (titel) => !titel ? '–' : (titel.length > 10 ? titel.slice(0, 9) + '…' : titel);
+  // Ermöglicht es, Spalten per Ziehen am unteren rechten Eck breiter zu stellen (CSS resize)
+  const resizeSpalte = (inhalt, minWidth) => `<div style="resize:horizontal;overflow:hidden;min-width:${minWidth}px;max-width:320px;padding:6px 10px;white-space:nowrap;box-sizing:border-box;">${inhalt}</div>`;
   const HJ_FARBE = { 1: '#7dd3fc', 2: '#f0a8a8' };
   const HJ_LABEL = { 1: '1. Halbjahr', 2: '2. Halbjahr' };
 
@@ -3363,12 +3365,14 @@ function kdRenderNotenUebersicht() {
 
   // Sticky-Positionen (top/left) werden nach dem Rendern per JS aus den tatsächlichen Zellgrößen berechnet
   // (kdNotenUebFixierePositionen), da Textbreiten/-höhen variieren. Hier nur Platzhalter + Marker-Klassen.
-  const stickyTop = (rowKlasse, extra) => `position:sticky;top:0;z-index:3;${extra || ''}" class="kd-ns-row kd-ns-row-${rowKlasse}`;
-  const stickyEcke = (colIdx, extra) => `position:sticky;top:0;left:0;z-index:6;${extra || ''}" class="kd-ns-col kd-ns-col-${colIdx}`;
+  // transform:translateZ(0) erzwingt eine eigene Compositing-Ebene, damit native Formularelemente (Select)
+  // beim Scrollen nicht durch die fixierten Spalten "durchscheinen".
+  const stickyTop = (rowKlasse, extra) => `position:sticky;top:0;z-index:4;transform:translateZ(0);${extra || ''}" class="kd-ns-row kd-ns-row-${rowKlasse}`;
+  const stickyEcke = (colIdx, extra) => `position:sticky;top:0;left:0;z-index:8;transform:translateZ(0);${extra || ''}" class="kd-ns-col kd-ns-col-${colIdx}`;
 
   let kopf1 = `<th rowspan="4" style="${stickyEcke(0, `background:var(--gray-100);padding:8px 10px;font-size:12px;border-top-left-radius:12px;`)}">Nr.</th>
     <th rowspan="4" style="${stickyEcke(1, `background:var(--gray-100);padding:8px 10px;font-size:12px;`)}">Nachname</th>
-    <th rowspan="4" style="${stickyEcke(2, `background:var(--gray-100);padding:8px 10px;font-size:12px;box-shadow:3px 0 6px -3px rgba(0,0,0,0.15);`)}">Vorname</th>`;
+    <th rowspan="4" style="${stickyEcke(2, `background:var(--gray-100);padding:8px 10px;font-size:12px;border-right:2px solid var(--gray-200);`)}">Vorname</th>`;
   let kopf2 = '';
   let kopf3 = '';
   let kopf4 = '';
@@ -3388,22 +3392,22 @@ function kdRenderNotenUebersicht() {
         b.subgroups.forEach(sg => {
           kopf3 += `<th colspan="${sg.entries.length + 1}" style="${stickyTop(2, `background:var(--gray-100);padding:5px 6px;font-size:10px;font-weight:600;color:var(--gray-600);white-space:nowrap;`)}">${sg.name}</th>`;
           sg.entries.forEach(e => {
-            kopf4 += `<th style="${stickyTop(3, `background:var(--gray-50,#f9fafb);padding:6px 10px;font-size:11px;font-weight:600;white-space:nowrap;min-width:60px;`)}" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzel(e.titel)}</th>`;
+            kopf4 += `<th style="${stickyTop(3, `background:var(--gray-50,#f9fafb);padding:0;font-size:11px;font-weight:600;`)}" title="${(e.titel || '').replace(/"/g, '&quot;')}">${resizeSpalte(kuerzel(e.titel), 72)}</th>`;
           });
-          kopf4 += `<th style="${stickyTop(3, `background:var(--gray-200);padding:6px 10px;font-size:11px;font-weight:700;white-space:nowrap;min-width:56px;`)}">Ø</th>`;
+          kopf4 += `<th style="${stickyTop(3, `background:var(--gray-200);padding:0;font-size:11px;font-weight:700;`)}">${resizeSpalte('Ø', 64)}</th>`;
         });
-        kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-200);padding:6px 10px;font-size:11px;font-weight:700;white-space:nowrap;min-width:70px;`)}">Mittelwert</th>`;
+        kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-200);padding:0;font-size:11px;font-weight:700;`)}">${resizeSpalte('Mittelwert', 84)}</th>`;
       } else {
         b.subgroups[0].entries.forEach(e => {
-          kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-50,#f9fafb);padding:6px 10px;font-size:11px;font-weight:600;white-space:nowrap;min-width:60px;`)}" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzel(e.titel)}</th>`;
+          kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-50,#f9fafb);padding:0;font-size:11px;font-weight:600;`)}" title="${(e.titel || '').replace(/"/g, '&quot;')}">${resizeSpalte(kuerzel(e.titel), 72)}</th>`;
         });
-        kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-200);padding:6px 10px;font-size:11px;font-weight:700;white-space:nowrap;min-width:70px;`)}">Mittelwert</th>`;
+        kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-200);padding:0;font-size:11px;font-weight:700;`)}">${resizeSpalte('Mittelwert', 84)}</th>`;
       }
     });
 
-    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:7px 10px;font-size:12px;font-weight:700;white-space:nowrap;min-width:80px;`)}">${HJ_LABEL[hj]}</th>`;
-    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:7px 10px;font-size:11px;font-weight:700;white-space:nowrap;min-width:90px;`)}">errechnete<br>Zeugnisnote ${hj}. Hj</th>`;
-    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:7px 10px;font-size:11px;font-weight:700;white-space:nowrap;min-width:90px;${hj === 2 ? 'border-top-right-radius:12px;' : ''}`)}">erteilte<br>Zeugnisnote ${hj}. Hj</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:12px;font-weight:700;`)}">${resizeSpalte(HJ_LABEL[hj], 90)}</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:11px;font-weight:700;`)}">${resizeSpalte(`errechnete<br>Zeugnisnote ${hj}. Hj`, 100)}</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:11px;font-weight:700;${hj === 2 ? 'border-top-right-radius:12px;' : ''}`)}">${resizeSpalte(`erteilte<br>Zeugnisnote ${hj}. Hj`, 100)}</th>`;
   });
 
   html += `<div style="border-radius:14px;overflow:hidden;border:1px solid var(--gray-200);box-shadow:0 2px 8px rgba(0,0,0,0.06);">
@@ -3418,11 +3422,11 @@ function kdRenderNotenUebersicht() {
         <tbody>`;
 
   kdSchueler.forEach((s, idx) => {
-    const rowBg = idx % 2 === 0 ? 'var(--white)' : '#f8fafc';
+    const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
     html += `<tr style="background:${rowBg};">
-      <td class="kd-ns-col kd-ns-col-0" style="position:sticky;left:0;z-index:1;padding:6px 10px;font-size:12px;white-space:nowrap;color:var(--gray-500);background:${rowBg};border-top:1px solid var(--gray-100);">${idx + 1}</td>
-      <td class="kd-ns-col kd-ns-col-1" style="position:sticky;left:0;z-index:1;padding:6px 10px;font-size:12px;white-space:nowrap;font-weight:600;background:${rowBg};border-top:1px solid var(--gray-100);">${s.nachname}</td>
-      <td class="kd-ns-col kd-ns-col-2" style="position:sticky;left:0;z-index:1;padding:6px 10px;font-size:12px;white-space:nowrap;background:${rowBg};border-top:1px solid var(--gray-100);box-shadow:3px 0 6px -3px rgba(0,0,0,0.1);">${s.vorname}</td>`;
+      <td class="kd-ns-col kd-ns-col-0" style="position:sticky;left:0;z-index:2;transform:translateZ(0);padding:6px 10px;font-size:12px;white-space:nowrap;color:var(--gray-500);background-color:${rowBg};border-top:1px solid var(--gray-100);">${idx + 1}</td>
+      <td class="kd-ns-col kd-ns-col-1" style="position:sticky;left:0;z-index:2;transform:translateZ(0);padding:6px 10px;font-size:12px;white-space:nowrap;font-weight:600;background-color:${rowBg};border-top:1px solid var(--gray-100);">${s.nachname}</td>
+      <td class="kd-ns-col kd-ns-col-2" style="position:sticky;left:0;z-index:2;transform:translateZ(0);padding:6px 10px;font-size:12px;white-space:nowrap;background-color:${rowBg};border-top:1px solid var(--gray-100);border-right:2px solid var(--gray-200);">${s.vorname}</td>`;
 
     let hj1Mw = null, hj2Mw = null;
 
