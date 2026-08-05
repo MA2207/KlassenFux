@@ -1127,16 +1127,25 @@ function kdDatumAusKW(kw, jahr, wochentag) {
 async function kdLadeUnterricht() {
   const heute = new Date();
 
-  // Schuljahresbeginn: 1. September dieses oder letzten Jahres
+  // Schuljahresbeginn aus Einstellungen laden
   const sjJahr = heute.getMonth() >= 8 ? heute.getFullYear() : heute.getFullYear() - 1;
-  const schuljahresBeginn = new Date(sjJahr, 8, 1);
+  const schuljahresBeginnFallback = new Date(sjJahr, 8, 1);
 
-  // 1. Alle SP-Einträge für diese Klasse (über alle Versionen) + Versionen + Planung (OHNE klasse_id Filter!)
-  const [{ data: alleSpSlots }, { data: versionen }, { data: alleUpRows }] = await Promise.all([
+  // 1. Alle SP-Einträge + Versionen + Planung + Einstellungen parallel
+  const [{ data: alleSpSlots }, { data: versionen }, { data: alleUpRows }, { data: einstRow }] = await Promise.all([
     sb.from('stundenplan').select('wochentag,stunde,fach,version_id').eq('klasse_id', kdAktiveKlasseId),
     sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
     sb.from('unterrichtsplanung').select('*').gte('jahr', sjJahr),
+    sb.from('einstellungen').select('daten').eq('id', 1).single(),
   ]);
+
+  const einst = einstRow?.daten || {};
+  const schuljahresBeginn = einst.hj1_start
+    ? new Date(einst.hj1_start + 'T12:00:00')
+    : schuljahresBeginnFallback;
+  const schuljahresEnde = einst.hj2_ende
+    ? new Date(einst.hj2_ende + 'T12:00:00')
+    : heute;
 
   // Alle (wochentag, stunde) Paare dieser Klasse sammeln (über alle Versionen)
   const klasseSlots = {}; // "wd-std" → { wochentag, stunde, fach }
@@ -1172,9 +1181,10 @@ async function kdLadeUnterricht() {
       (a.gueltig_ab || '0') < (b.gueltig_ab || '0') ? -1 : 1
     );
 
-    // Alle Wochen von Schuljahresbeginn bis heute
+    // Alle Wochen von Schuljahresbeginn bis Schuljahresende
+    const bisDate = schuljahresEnde < heute ? schuljahresEnde : heute;
     const { kw: sKW, jahr: sJahr } = getISOWeek(schuljahresBeginn);
-    const { kw: eKW, jahr: eJahr } = getISOWeek(heute);
+    const { kw: eKW, jahr: eJahr } = getISOWeek(schuljahresEnde);
 
     let curKW = sKW, curJahr = sJahr;
     while (curJahr * 100 + curKW <= eJahr * 100 + eKW) {
@@ -1239,9 +1249,10 @@ async function kdLadeUnterricht() {
     });
   });
 
+  // Aufsteigend: erste Schulwoche zuerst
   kdUnterricht.sort((a, b) => {
-    if (b.jahr !== a.jahr) return b.jahr - a.jahr;
-    if (b.kalenderwoche !== a.kalenderwoche) return b.kalenderwoche - a.kalenderwoche;
+    if (a.jahr !== b.jahr) return a.jahr - b.jahr;
+    if (a.kalenderwoche !== b.kalenderwoche) return a.kalenderwoche - b.kalenderwoche;
     if (a.wochentag !== b.wochentag) return a.wochentag - b.wochentag;
     return a.stunde - b.stunde;
   });
@@ -1270,7 +1281,7 @@ function kdRenderUnterricht() {
     if (!gruppen[key]) gruppen[key] = { kw: r.kalenderwoche, jahr: r.jahr, zeilen: [] };
     gruppen[key].zeilen.push(r);
   });
-  const gruppenKeys = Object.keys(gruppen).sort().reverse();
+  const gruppenKeys = Object.keys(gruppen).sort(); // aufsteigend: erste KW zuerst
 
   // Gesamtzahl
   const gesamt = kdUnterricht.length;
