@@ -1226,12 +1226,22 @@ async function kdLadeUnterricht() {
         gueltigeVersionId = versionenSorted[versionenSorted.length - 1].id;
       }
 
-      for (const sp of slots) {
+      const kdDS = einst.doppelstunden || [];
+      const kdDSSkip = new Set(); // Stunden die als DS-Ende übersprungen werden
+
+      // Slots sortiert nach Stunde damit DS-Erkennung funktioniert
+      const sortedSlots = slots.slice().sort((a, b) =>
+        a.wochentag !== b.wochentag ? a.wochentag - b.wochentag : a.stunde - b.stunde
+      );
+
+      for (const sp of sortedSlots) {
         const slotKey = `${sp.wochentag}-${sp.stunde}`;
-        // Slot nur ausgeben wenn er in der gültigen Version auch für diese Klasse gilt
         const istGueltig = !gueltigeVersionId ||
           fachProVersionSlot[`${gueltigeVersionId}:${slotKey}`] !== undefined;
         if (!istGueltig) continue;
+
+        // Wenn diese Stunde als DS-Ende markiert wurde: überspringen (bereits in DS-Start-Eintrag enthalten)
+        if (kdDSSkip.has(slotKey)) continue;
 
         const rKey = `${curKW}-${curJahr}-${sp.wochentag}-${sp.stunde}`;
         if (slotSet.has(rKey)) continue;
@@ -1240,6 +1250,20 @@ async function kdLadeUnterricht() {
         const fach = gueltigeVersionId
           ? (fachProVersionSlot[`${gueltigeVersionId}:${slotKey}`] ?? sp.fach)
           : sp.fach;
+
+        // Doppelstunde prüfen
+        const isDSStart = kdDS.some(d => d.wochentag === sp.wochentag && d.stunde === sp.stunde);
+        const partnerSlotKey = `${sp.wochentag}-${sp.stunde + 1}`;
+        const partnerGueltig = isDSStart && (
+          !gueltigeVersionId || fachProVersionSlot[`${gueltigeVersionId}:${partnerSlotKey}`] !== undefined
+        );
+
+        if (isDSStart && partnerGueltig) {
+          kdDSSkip.add(partnerSlotKey);
+          const rKey2 = `${curKW}-${curJahr}-${sp.wochentag}-${sp.stunde + 1}`;
+          slotSet.add(rKey2); // auch 2. Stunde markieren als bearbeitet
+        }
+
         kdUnterricht.push({
           _key: rKey, id: plan.id || null,
           kalenderwoche: curKW, jahr: curJahr,
@@ -1247,6 +1271,8 @@ async function kdLadeUnterricht() {
           fach: plan.fach || fach || '',
           inhalt: plan.inhalt || '', hausaufgaben: plan.hausaufgaben || '', notiz: plan.notiz || '',
           _spFach: fach || '',
+          _isDoppelstunde: isDSStart && partnerGueltig,
+          _doppelstundeEnde: isDSStart && partnerGueltig ? sp.stunde + 1 : null,
         });
       }
 
@@ -1324,9 +1350,9 @@ function kdRenderUnterricht() {
   });
   const gruppenKeys = Object.keys(gruppen).sort(); // aufsteigend: erste KW zuerst
 
-  // Statistik (immer über alle, nicht nur gefiltert)
-  const gesamt = gefiltertList.length;
-  const mitInhalt = gefiltertList.filter(r => r.inhalt).length;
+  // Statistik: Doppelstunden zählen als 2
+  const gesamt = gefiltertList.reduce((s, r) => s + (r._isDoppelstunde ? 2 : 1), 0);
+  const mitInhalt = gefiltertList.filter(r => r.inhalt).reduce((s, r) => s + (r._isDoppelstunde ? 2 : 1), 0);
 
   // Fach-Filter-Chips
   const chipStyle = (fach) => fach === kdUnterrichtFachFilter
@@ -1421,7 +1447,7 @@ function kdRenderUnterricht() {
         <div style="padding:12px 14px;background:${rowBg};border-right:2px solid var(--gray-100);display:flex;flex-direction:column;justify-content:center;gap:4px;">
           <div style="font-size:13px;font-weight:700;color:var(--gray-800);">${wdKurz[r.wochentag]}, ${datumStr}</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;">
-            <span style="background:var(--gray-100);color:var(--gray-600);font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;">${r.stunde}. Std.</span>
+            <span style="background:${r._isDoppelstunde ? '#fef3c7' : 'var(--gray-100)'};color:${r._isDoppelstunde ? '#92400e' : 'var(--gray-600)'};font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;">${r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std.` : `${r.stunde}. Std.`}</span>
             ${(r.fach||r._spFach) ? `<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;">${r.fach||r._spFach}</span>` : ''}
           </div>
           ${!hasContent ? '<div style="font-size:10px;color:var(--gray-300);margin-top:2px;">Kein Eintrag</div>' : ''}
@@ -1494,11 +1520,17 @@ async function kdSpeichereUnterrichtZelle(el) {
     notiz: row.notiz || '',
   };
 
-  const { data: saved, error } = await sb.from('unterrichtsplanung')
-    .upsert(upsertData, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' })
-    .select().single();
+  const rows = [upsertData];
+  // Bei Doppelstunde: gleiche Inhalte auch in die Partnerstunde schreiben
+  if (row._isDoppelstunde && row._doppelstundeEnde) {
+    rows.push({ ...upsertData, stunde: row._doppelstundeEnde });
+  }
 
-  if (!error && saved) row.id = saved.id;
+  const { data: saved, error } = await sb.from('unterrichtsplanung')
+    .upsert(rows, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' })
+    .select();
+
+  if (!error && saved && saved[0]) row.id = saved[0].id;
 
   if (!error) {
     el.style.background = '#dcfce7';
@@ -2285,6 +2317,7 @@ const SP_STUNDEN = [
 ];
 let spDaten = {};
 let spEinstellungen = {};
+let spDoppelstunden = []; // { wochentag, stunde }[] – aus einstellungen.daten
 let spVersionen = [];
 let spAktivVersionId = null;
 let spVersionModalModus = 'neu'; // 'neu' | 'edit'
@@ -2297,6 +2330,7 @@ async function loadStundenplan() {
   ]);
 
   spEinstellungen = einst?.daten || {};
+  spDoppelstunden = spEinstellungen.doppelstunden || [];
   allKlassen = klassen || [];
   spVersionen = versionen || [];
 
@@ -2358,6 +2392,21 @@ async function spWechselVersion(id) {
   (plan || []).forEach(r => { spDaten[`${r.wochentag}-${r.stunde}`] = r; });
   renderSpVersionBar();
   renderStundenplan();
+}
+
+async function spToggleDoppelstunde(wochentag, stunde) {
+  const idx = spDoppelstunden.findIndex(d => d.wochentag === wochentag && d.stunde === stunde);
+  if (idx >= 0) spDoppelstunden.splice(idx, 1);
+  else spDoppelstunden.push({ wochentag, stunde });
+  spEinstellungen.doppelstunden = spDoppelstunden;
+  await sb.from('einstellungen').upsert({ id: 1, daten: spEinstellungen });
+  renderStundenplan();
+}
+function spIstDoppelstundeStart(wochentag, stunde) {
+  return spDoppelstunden.some(d => d.wochentag === wochentag && d.stunde === stunde);
+}
+function spIstDoppelstundeEnde(wochentag, stunde) {
+  return spDoppelstunden.some(d => d.wochentag === wochentag && d.stunde === stunde - 1);
 }
 
 function spNeueVersion() {
@@ -2510,7 +2559,13 @@ function renderStundenplan() {
         : `<input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach'}" value="${e.fach || ''}"
             onchange="saveSpZelle(${tag},${stunde})">`;
 
-      html += `<td style="${lzStyle}${cellBg}">
+      const isDS = spIstDoppelstundeStart(tag, stunde);
+      const isDSEnd = spIstDoppelstundeEnde(tag, stunde);
+      const dsBadge = isDS
+        ? `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
+        : isDSEnd ? `<div style="margin-top:3px;text-align:center;font-size:9px;color:#9ca3af;font-style:italic;">↑ Doppelstunde</div>`
+        : `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Als Doppelstunde markieren (mit nächster Stunde)" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:1px dashed #d1d5db;background:transparent;color:#9ca3af;font-size:9px;cursor:pointer;">+ 2h</button>`;
+      html += `<td style="${lzStyle}${cellBg}${isDS ? 'border-bottom:2px solid #f59e0b !important;' : ''}${isDSEnd ? 'border-top:2px solid #f59e0b;' : ''}">
         <div class="sp-cell${isFrei ? ' sp-cell-frei' : ''}" data-tag="${tag}" data-st="${stunde}">
           ${faecherField}
           <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
@@ -2518,6 +2573,7 @@ function renderStundenplan() {
           </select>
           <input class="sp-raum" type="text" placeholder="Raum (optional)" value="${e.raum || ''}"
             onchange="saveSpZelle(${tag},${stunde})">
+          ${dsBadge}
         </div>
       </td>`;
     }
@@ -3044,13 +3100,32 @@ function renderUpTag(tagNr) {
         <div style="flex:1;min-width:0;padding:7px 14px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;">Einträge</div>
       </div>`;
 
+  const upDoppelstunden = upEinst.doppelstunden || [];
+  const upIstDS = (st) => upDoppelstunden.some(d => d.wochentag === tagNr && d.stunde === st);
+  const skipStunden = new Set(); // Stunden die als 2. Teil einer DS übersprungen werden
+
   stundenAmTag.forEach((row, idx) => {
     const { stunde, label, isLZ } = row;
+    if (skipStunden.has(stunde)) return; // 2. Teil einer DS – überspringen
+
     const sp = upSpDaten[`${tagNr}-${stunde}`] || {};
     const plan = upPlanDaten[`${tagNr}-${stunde}`] || {};
     const zeitIdx = SP_STUNDEN.findIndex(s => s.stunde === stunde);
     const zeit = upZeitLabel(zeitIdx);
     const isLast = idx === stundenAmTag.length - 1;
+
+    // Doppelstunde: nächste Stunde prüfen
+    const nextRow = stundenAmTag[idx + 1];
+    const isDSStart = upIstDS(stunde) && nextRow && nextRow.stunde === stunde + 1;
+    let dsLabel = label;
+    let dsZeit = zeit;
+    if (isDSStart) {
+      skipStunden.add(stunde + 1);
+      dsLabel = `${label.replace('.','')}.–${stunde + 1}. Std.`;
+      const zeitIdx2 = SP_STUNDEN.findIndex(s => s.stunde === stunde + 1);
+      const zeit2 = upZeitLabel(zeitIdx2);
+      if (zeit2) dsZeit = `${zeit}–${zeit2.split('–')[1] || zeit2}`;
+    }
 
     // Effektive Werte: Plan-Override hat Vorrang (null = nicht geändert, nur gesetzter Wert = Override)
     const effFach = (plan.fach != null) ? plan.fach : (sp.fach || '');
@@ -3065,12 +3140,14 @@ function renderUpTag(tagNr) {
     const inpStyle = `border:none;padding:4px 7px;min-width:0;width:100%;font-size:12px;background:transparent;color:var(--gray-800);font-family:inherit;resize:none;line-height:1.5;outline:none;`;
     const inpSmStyle = `border:none;padding:4px 7px;min-width:0;width:100%;font-size:11px;background:transparent;color:var(--gray-700);font-family:inherit;resize:none;line-height:1.4;outline:none;`;
 
+    const dsBorder = isDSStart ? 'border-left:3px solid #f59e0b;' : '';
     html += `
-      <div style="display:flex;width:100%;box-sizing:border-box;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}">
+      <div style="display:flex;width:100%;box-sizing:border-box;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}${dsBorder}">
         <div style="flex:0 0 ${leftW};width:${leftW};min-width:0;padding:10px 12px;border-right:1px solid var(--gray-200);display:flex;flex-direction:column;gap:5px;justify-content:center;">
-          <div style="display:flex;align-items:baseline;gap:4px;">
-            <span style="font-weight:600;font-size:0.9rem;${isLZ ? 'color:var(--gray-400);' : ''}">${label}</span>
-            <span style="font-size:10px;color:var(--gray-400);">${zeit}</span>
+          <div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap;">
+            <span style="font-weight:600;font-size:0.9rem;${isLZ ? 'color:var(--gray-400);' : ''}">${dsLabel}</span>
+            ${isDSStart ? '<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:8px;font-weight:700;">2h</span>' : ''}
+            <span style="font-size:10px;color:var(--gray-400);">${dsZeit}</span>
           </div>
           <input type="text"
             value="${effFach.replace(/"/g, '&quot;')}"
@@ -3146,8 +3223,16 @@ async function upSaveZeile(tagNr, stunde) {
   if ('fach' in row) upsertData.fach = row.fach || null;
   if ('klasse_id' in row) upsertData.klasse_id = row.klasse_id || null;
 
+  const doppelstunden = upEinst.doppelstunden || [];
+  const isDSStart = doppelstunden.some(d => d.wochentag === tagNr && d.stunde === stunde);
+
+  const rows = [upsertData];
+  if (isDSStart) {
+    rows.push({ ...upsertData, stunde: stunde + 1 }); // Gleiche Inhalte in Folgestunde spiegeln
+  }
+
   const { error } = await sb.from('unterrichtsplanung').upsert(
-    upsertData, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' });
+    rows, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' });
 
   const ind = document.getElementById('up-save-ind');
   if (ind) {
