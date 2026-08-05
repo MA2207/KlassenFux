@@ -672,6 +672,27 @@
       </div>
     </div>
 
+    <!-- Notenschlüssel -->
+    <div class="settings-section">
+      <div class="settings-section-title">Notenschlüssel</div>
+      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">
+        Legt fest, ab wie viel Prozent erreichter Punkte welche Note vergeben wird. Wird bei punktebasierten Noteneinträgen zur automatischen Notenberechnung verwendet.
+      </p>
+      <div style="overflow-x:auto;">
+        <table style="border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 8px;font-size:12px;color:var(--gray-400);">Note</th>
+              <th style="text-align:left;padding:6px 8px;font-size:12px;color:var(--gray-400);">Dezimalwert</th>
+              <th style="text-align:left;padding:6px 8px;font-size:12px;color:var(--gray-400);">ab wieviel %</th>
+            </tr>
+          </thead>
+          <tbody id="notenschluessel-tabelle"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="kdNotenschluesselZuruecksetzen()" style="margin-top:8px;">↺ Auf Standardwerte zurücksetzen</button>
+    </div>
+
     <!-- Bundesland & Ferien -->
     <div class="settings-section">
       <div class="settings-section-title">Bundesland &amp; Schulferien</div>
@@ -3240,6 +3261,59 @@ async function deleteSchueler(id, name) {
 // ── EINSTELLUNGEN ──
 let unterrichtsstunden = [];
 
+// Notenschlüssel: Codes von der besten zur schlechtesten Note geordnet
+const KD_NOTEN_CODES = ['1', '1-', '2+', '2', '2-', '3+', '3', '3-', '4+', '4', '4-', '5+', '5', '5-', '6+', '6'];
+const KD_NOTE_MAP_DEFAULT = { '1': 1, '1-': 1.25, '2+': 1.75, '2': 2, '2-': 2.25, '3+': 2.75, '3': 3, '3-': 3.25, '4+': 3.75, '4': 4, '4-': 4.25, '5+': 4.75, '5': 5, '5-': 5.25, '6+': 5.75, '6': 6 };
+const KD_NOTENSCHLUESSEL_DEFAULT = { '1': 97.5, '1-': 95.0, '2+': 91.5, '2': 84.0, '2-': 80.0, '3+': 76.5, '3': 69.0, '3-': 65.0, '4+': 61.5, '4': 54.0, '4-': 50.0, '5+': 44.0, '5': 31.5, '5-': 25.0, '6+': 12.5, '6': 0.0 };
+let KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT };
+let KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT };
+
+function kdCodeZuId(code) { return code.replace('+', 'p').replace('-', 'm'); }
+
+// Ermittelt zu einem erreichten Prozentwert die passende Note (höchste Schwelle, die erreicht wurde)
+function kdProzentZuNote(prozent) {
+  for (const code of KD_NOTEN_CODES) {
+    if (prozent >= KD_NOTENSCHLUESSEL_MIN[code]) return code;
+  }
+  return KD_NOTEN_CODES[KD_NOTEN_CODES.length - 1];
+}
+
+function renderNotenschluesselTabelle(dez, min) {
+  const tbody = document.getElementById('notenschluessel-tabelle');
+  if (!tbody) return;
+  tbody.innerHTML = KD_NOTEN_CODES.map(code => {
+    const id = kdCodeZuId(code);
+    return `<tr>
+      <td style="padding:6px 8px;font-size:13px;font-weight:700;color:var(--gray-800);">${code}</td>
+      <td style="padding:4px 8px;">
+        <input type="number" step="0.01" min="1" max="6" id="ns-dez-${id}" value="${dez[code]}"
+          oninput="autoSave()" style="width:80px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+      </td>
+      <td style="padding:4px 8px;">
+        <input type="number" step="0.1" min="0" max="100" id="ns-min-${id}" value="${min[code]}"
+          oninput="autoSave()" style="width:80px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> %
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function kdNotenschluesselAuslesen() {
+  const dez = {}, min = {};
+  KD_NOTEN_CODES.forEach(code => {
+    const id = kdCodeZuId(code);
+    const dEl = document.getElementById('ns-dez-' + id);
+    const mEl = document.getElementById('ns-min-' + id);
+    dez[code] = dEl && dEl.value !== '' ? parseFloat(dEl.value) : KD_NOTE_MAP_DEFAULT[code];
+    min[code] = mEl && mEl.value !== '' ? parseFloat(mEl.value) : KD_NOTENSCHLUESSEL_DEFAULT[code];
+  });
+  return { dez, min };
+}
+
+function kdNotenschluesselZuruecksetzen() {
+  renderNotenschluesselTabelle(KD_NOTE_MAP_DEFAULT, KD_NOTENSCHLUESSEL_DEFAULT);
+  autoSave();
+}
+
 function applyEinstellungen(saved) {
   saved = saved || {};
   document.getElementById('set-lehrername').value = saved.lehrername || '';
@@ -3265,6 +3339,11 @@ function applyEinstellungen(saved) {
   const zg = saved.zeugnisGewichtung || { hj1: 30, hj2: 70 };
   document.getElementById('set-zeugnis-hj1').value = zg.hj1 ?? 30;
   document.getElementById('set-zeugnis-hj2').value = zg.hj2 ?? 70;
+
+  const ns = saved.notenschluessel || {};
+  KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT, ...(ns.dezimalwerte || {}) };
+  KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT, ...(ns.prozentSchwellen || {}) };
+  renderNotenschluesselTabelle(KD_NOTE_MAP, KD_NOTENSCHLUESSEL_MIN);
 }
 
 // Hält die beiden Zeugnis-Gewichtungsfelder komplementär (Summe = 100)
@@ -3310,6 +3389,11 @@ async function saveEinstellungen() {
     hj2: parseFloat(document.getElementById('set-zeugnis-hj2')?.value) || 0,
   };
 
+  const { dez: notenschluesselDez, min: notenschluesselMin } = kdNotenschluesselAuslesen();
+  KD_NOTE_MAP = notenschluesselDez;
+  KD_NOTENSCHLUESSEL_MIN = notenschluesselMin;
+  const notenschluessel = { dezimalwerte: notenschluesselDez, prozentSchwellen: notenschluesselMin };
+
   const daten = {
     lehrername: document.getElementById('set-lehrername').value.trim(),
     schulname: document.getElementById('set-schulname').value.trim(),
@@ -3325,6 +3409,7 @@ async function saveEinstellungen() {
     faecher,
     notenKonfiguration,
     zeugnisGewichtung,
+    notenschluessel,
   };
   await sb.from('einstellungen').upsert({ id: 1, daten });
 }
