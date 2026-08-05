@@ -1122,7 +1122,7 @@ async function kdOeffneKlasse(klasseId) {
   kdHaUebFachFilter = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
-  await Promise.all([kdLadeCheckliste(), kdLadeUnterricht()]);
+  await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben()]);
   kdZeigeUnterseite('checkliste');
 }
 
@@ -1925,6 +1925,18 @@ function kdRenderAnwUebersicht(vergangenStunden) {
     });
   });
 
+  // HA-Querschnitt (alle vergangenen Stunden, alle Fächer)
+  const haSum = {};
+  kdSchueler.forEach(s => { haSum[s.id] = { vergessen:0, nachgereicht:0 }; });
+  const allePastSlots = new Set(
+    kdUnterricht.filter(r => kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag) <= jetzt)
+      .map(r => `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
+  );
+  const haTotalGlobal = allePastSlots.size;
+  kdHausaufgaben.forEach(a => {
+    if (haSum[a.schueler_id]) haSum[a.schueler_id][a.status] = (haSum[a.schueler_id][a.status] || 0) + 1;
+  });
+
   html += `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);">
     <table style="border-collapse:collapse;min-width:max-content;width:100%;">
       <thead>
@@ -1964,13 +1976,27 @@ function kdRenderAnwUebersicht(vergangenStunden) {
       `<span style="color:${prozentColor};font-size:10px;font-weight:700;" title="Anwesenheitsquote">${anwesenheitProzent}%</span>`,
     ].filter(Boolean).join(' ');
 
+    // HA-Querschnitt für diesen Schüler
+    const haV = haSum[s.id]?.vergessen || 0;
+    const haN = haSum[s.id]?.nachgereicht || 0;
+    const haQuote = haTotalGlobal > 0 ? Math.round((haTotalGlobal - haV) / haTotalGlobal * 100) : 100;
+    const haQuoteColor = haQuote >= 90 ? '#15803d' : haQuote >= 75 ? '#b45309' : '#991b1b';
+    const haBadges = [
+      haV ? `<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="HA vergessen">${haV}×V</span>` : '',
+      haN ? `<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="HA nachgereicht">${haN}×N</span>` : '',
+      `<span style="color:${haQuoteColor};font-size:10px;font-weight:700;">${haQuote}%</span>`,
+    ].filter(Boolean).join(' ');
+
     html += `<tr>
       <td style="position:sticky;left:0;z-index:1;background:${rowBg};padding:7px 14px;border-bottom:1px solid var(--gray-100);">
         <div style="font-size:12px;font-weight:600;color:var(--gray-800);white-space:nowrap;">${s.nachname}, ${s.vorname}</div>
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;">
-          ${(fehlend || entschuldigt || verspaetet)
-            ? badges
-            : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:2px;">
+          <span style="font-size:9px;color:var(--gray-400);font-weight:600;white-space:nowrap;">👥</span>
+          ${(fehlend || entschuldigt || verspaetet) ? badges : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:2px;">
+          <span style="font-size:9px;color:var(--gray-400);font-weight:600;white-space:nowrap;">📝</span>
+          ${(haV || haN) ? haBadges : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
         </div>
       </td>
       ${tabellenSpalten.map(r => {
@@ -2249,7 +2275,7 @@ function kdRenderHaUebersicht(alleStunden) {
     haLookup[`${a.schueler_id}-${a.kalenderwoche}-${a.jahr}-${a.wochentag}-${a.stunde}`] = a.status;
   });
 
-  // Zusammenfassung pro Schüler
+  // Zusammenfassung pro Schüler (HA)
   const sum = {};
   kdSchueler.forEach(s => { sum[s.id] = { vergessen: 0, nachgereicht: 0, gesamt: vergangeneGefiltert.length }; });
   vergangeneGefiltert.forEach(r => {
@@ -2257,6 +2283,16 @@ function kdRenderHaUebersicht(alleStunden) {
       const status = haLookup[`${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`];
       if (status && sum[s.id]) sum[s.id][status] = (sum[s.id][status] || 0) + 1;
     });
+  });
+
+  // Anwesenheits-Querschnitt (alle vergangenen Stunden, alle Fächer)
+  const anwSum = {};
+  kdSchueler.forEach(s => { anwSum[s.id] = { fehlend: 0, entschuldigt: 0, verspaetet: 0 }; });
+  const jetzt2 = new Date(); jetzt2.setUTCHours(23,59,59,999);
+  const allePastSlotsAnw = kdUnterricht.filter(r => kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag) <= jetzt2);
+  const anwTotalGlobal = allePastSlotsAnw.length;
+  kdAnwesenheit.forEach(a => {
+    if (anwSum[a.schueler_id]) anwSum[a.schueler_id][a.status] = (anwSum[a.schueler_id][a.status] || 0) + 1;
   });
 
   const statusKurz = {
@@ -2287,23 +2323,38 @@ function kdRenderHaUebersicht(alleStunden) {
     const vergessen    = st.vergessen;
     const nachgereicht = st.nachgereicht;
     const totalHA      = st.gesamt;
-    // HA-Quote: nachgereicht zählt als "letztendlich erledigt"
-    const haQuote = totalHA > 0
-      ? Math.round((totalHA - vergessen) / totalHA * 100)
-      : 100;
-    const quoteColor = haQuote >= 90 ? '#15803d' : haQuote >= 75 ? '#b45309' : '#991b1b';
+    const haQuote = totalHA > 0 ? Math.round((totalHA - vergessen) / totalHA * 100) : 100;
+    const haQuoteColor = haQuote >= 90 ? '#15803d' : haQuote >= 75 ? '#b45309' : '#991b1b';
 
-    const badges = [
+    const haBadges = [
       vergessen    ? `<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Vergessen">${vergessen}×V</span>` : '',
       nachgereicht ? `<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Nachgereicht">${nachgereicht}×N</span>` : '',
-      `<span style="color:${quoteColor};font-size:10px;font-weight:700;" title="HA-Quote">${haQuote}%</span>`,
+      `<span style="color:${haQuoteColor};font-size:10px;font-weight:700;">${haQuote}%</span>`,
+    ].filter(Boolean).join(' ');
+
+    // Anwesenheits-Querschnitt
+    const anwF = anwSum[s.id]?.fehlend || 0;
+    const anwE = anwSum[s.id]?.entschuldigt || 0;
+    const anwV = anwSum[s.id]?.verspaetet || 0;
+    const anwQuote = anwTotalGlobal > 0 ? Math.round((anwTotalGlobal - anwF - anwE) / anwTotalGlobal * 100) : 100;
+    const anwQuoteColor = anwQuote >= 90 ? '#15803d' : anwQuote >= 75 ? '#b45309' : '#991b1b';
+    const anwBadges = [
+      anwF ? `<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Fehlend">${anwF}×F</span>` : '',
+      anwE ? `<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Entschuldigt">${anwE}×E</span>` : '',
+      anwV ? `<span style="background:#ede9fe;color:#5b21b6;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Verspätet">${anwV}×V</span>` : '',
+      `<span style="color:${anwQuoteColor};font-size:10px;font-weight:700;">${anwQuote}%</span>`,
     ].filter(Boolean).join(' ');
 
     html += `<tr>
       <td style="position:sticky;left:0;z-index:1;background:${rowBg};padding:7px 14px;border-bottom:1px solid var(--gray-100);">
         <div style="font-size:12px;font-weight:600;color:var(--gray-800);white-space:nowrap;">${s.nachname}, ${s.vorname}</div>
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;">
-          ${(vergessen || nachgereicht) ? badges : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:2px;">
+          <span style="font-size:9px;color:var(--gray-400);font-weight:600;white-space:nowrap;">📝</span>
+          ${(vergessen || nachgereicht) ? haBadges : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:2px;">
+          <span style="font-size:9px;color:var(--gray-400);font-weight:600;white-space:nowrap;">👥</span>
+          ${(anwF || anwE || anwV) ? anwBadges : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
         </div>
       </td>
       ${tabellenSpalten.map(r => {
