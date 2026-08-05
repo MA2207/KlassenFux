@@ -2248,10 +2248,10 @@ function kdRenderHaUebersicht(alleStunden) {
     haLookup[`${a.schueler_id}-${a.kalenderwoche}-${a.jahr}-${a.wochentag}-${a.stunde}`] = a.status;
   });
 
-  // Zusammenfassung pro Schüler (HA)
+  // Zusammenfassung pro Schüler (HA) – Counts aus allen Stunden, Prozent nur aus vergangenen
   const sum = {};
   kdSchueler.forEach(s => { sum[s.id] = { vergessen: 0, nachgereicht: 0, gesamt: vergangeneGefiltert.length }; });
-  vergangeneGefiltert.forEach(r => {
+  gefiltert.forEach(r => {
     kdSchueler.forEach(s => {
       const status = haLookup[`${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`];
       if (status && sum[s.id]) sum[s.id][status] = (sum[s.id][status] || 0) + 1;
