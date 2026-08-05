@@ -3410,7 +3410,10 @@ function kdRenderNotenUebersicht() {
     kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:11px;font-weight:700;${hj === 2 ? 'border-top-right-radius:12px;' : ''}`)}">${resizeSpalte(`erteilte<br>Zeugnisnote ${hj}. Hj`, 100)}</th>`;
   });
 
-  html += `<div id="kd-noten-ueb-scroll" style="border-radius:14px;border:1px solid var(--gray-200);box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:auto;resize:both;height:72vh;min-height:260px;min-width:320px;max-width:2400px;max-height:2000px;">
+  const gespGroesse = kdNotenEinst.notenUebersichtFenstergroesse || {};
+  const styleHoehe = gespGroesse.hoehe ? `${gespGroesse.hoehe}px` : '72vh';
+  const styleBreite = gespGroesse.breite ? `width:${gespGroesse.breite}px;` : '';
+  html += `<div id="kd-noten-ueb-scroll" style="border-radius:14px;border:1px solid var(--gray-200);box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:auto;resize:both;height:${styleHoehe};${styleBreite}min-height:260px;min-width:320px;max-width:2400px;max-height:2000px;">
       <table style="border-collapse:separate;border-spacing:0;">
         <thead>
           <tr>${kopf1}</tr>
@@ -3493,7 +3496,33 @@ function kdRenderNoten() {
 
   container.innerHTML = html;
   if (kdNotenAnsicht === 'eingabe' && kdNotenEingabeart === 'punkte') kdNotenGesamtpunktzahlAktualisieren();
-  if (kdNotenAnsicht === 'uebersicht') requestAnimationFrame(kdNotenUebFixierePositionen);
+  if (kdNotenAnsicht === 'uebersicht') {
+    requestAnimationFrame(kdNotenUebFixierePositionen);
+    kdNotenUebGroesseUeberwachen();
+  }
+}
+
+// Merkt sich die vom Nutzer gezogene Fenstergröße der Notenübersicht dauerhaft (in Supabase, nicht localStorage)
+let kdNotenUebResizeTimer = null;
+function kdNotenUebGroesseUeberwachen() {
+  const el = document.getElementById('kd-noten-ueb-scroll');
+  if (!el || typeof ResizeObserver === 'undefined') return;
+  const observer = new ResizeObserver(() => {
+    clearTimeout(kdNotenUebResizeTimer);
+    kdNotenUebResizeTimer = setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      kdNotenUebGroesseSpeichern(Math.round(rect.width), Math.round(rect.height));
+    }, 600);
+  });
+  observer.observe(el);
+}
+
+async function kdNotenUebGroesseSpeichern(breite, hoehe) {
+  const neueGroesse = { breite, hoehe };
+  const bisherige = kdNotenEinst.notenUebersichtFenstergroesse;
+  if (bisherige && bisherige.breite === breite && bisherige.hoehe === hoehe) return;
+  kdNotenEinst.notenUebersichtFenstergroesse = neueGroesse;
+  await sb.from('einstellungen').update({ daten: kdNotenEinst }).eq('id', 1);
 }
 
 // Berechnet die tatsächlichen top-/left-Offsets für die fixierten Kopfzeilen/-spalten der Notenübersicht,
