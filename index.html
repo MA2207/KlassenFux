@@ -1640,6 +1640,8 @@ function kdRenderAnwesenheit() {
 
 function kdRenderAnwErfassen(vergangenStunden) {
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const heute = new Date();
+  const heuteEnde = new Date(heute); heuteEnde.setUTCHours(23, 59, 59, 999);
 
   if (vergangenStunden.length === 0) {
     return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
