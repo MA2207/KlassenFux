@@ -1083,6 +1083,7 @@ function kdSetFachFilter(f) { kdUnterrichtFachFilter = f || null; kdRenderUnterr
 let kdAnwesenheit = []; // { id, schueler_id, kalenderwoche, jahr, wochentag, stunde, status }
 let kdAnwAktStunde = null; // { kw, jahr, wochentag, stunde } – gewählte Stunde im Erfassen-Tab
 let kdAnwAnsicht = 'erfassen'; // 'erfassen' | 'uebersicht'
+let kdAnwFachFilter = null; // Fach-Filter für Erfassen
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
   // Aktuelle KW suchen, sonst nächste verfügbare
@@ -1106,6 +1107,7 @@ async function kdOeffneKlasse(klasseId) {
   kdUnterrichtFachFilter = null; // Filter zurücksetzen beim Klassenwechsel
   kdAnwAktStunde = null;         // Anwesenheits-Auswahl zurücksetzen
   kdAnwAnsicht = 'erfassen';
+  kdAnwFachFilter = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht()]);
@@ -1573,6 +1575,12 @@ function kdAnwSetStunde(kw, jahr, wochentag, stunde) {
   kdRenderAnwesenheit();
 }
 
+function kdAnwSetFach(fach) {
+  kdAnwFachFilter = fach || null;
+  kdAnwAktStunde = null; // Auswahl zurücksetzen, damit erste Stunde des Fachs vorausgewählt wird
+  kdRenderAnwesenheit();
+}
+
 async function kdAnwToggle(schuelerId) {
   if (!kdAnwAktStunde) return;
   const { kw, jahr, wochentag, stunde } = kdAnwAktStunde;
@@ -1651,31 +1659,57 @@ function kdRenderAnwErfassen(vergangenStunden) {
     </div>`;
   }
 
-  // Neueste Stunde zuerst im Dropdown (zuletzt unterrichtete zuerst auswählen)
-  const stundenRev = [...vergangenStunden].reverse();
+  // Alle Fächer dieser Klasse für Fach-Filter ermitteln
+  const alleFaecher = [...new Set(vergangenStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
 
-  // Standard: letzte Stunde vorauswählen
-  if (!kdAnwAktStunde) {
-    const last = stundenRev[0];
-    kdAnwAktStunde = { kw: last.kalenderwoche, jahr: last.jahr, wochentag: last.wochentag, stunde: last.stunde };
+  // Fach-Filter anwenden (ältestes Datum zuerst – aufsteigend)
+  const gefiltertStunden = kdAnwFachFilter
+    ? vergangenStunden.filter(r => (r.fach || r._spFach) === kdAnwFachFilter)
+    : vergangenStunden;
+
+  // Standard: erste Stunde (älteste) vorauswählen, oder erste nach Fach-Filter
+  if (!kdAnwAktStunde && gefiltertStunden.length > 0) {
+    const first = gefiltertStunden[0];
+    kdAnwAktStunde = { kw: first.kalenderwoche, jahr: first.jahr, wochentag: first.wochentag, stunde: first.stunde };
   }
-  const aktKey = `${kdAnwAktStunde.kw}-${kdAnwAktStunde.jahr}-${kdAnwAktStunde.wochentag}-${kdAnwAktStunde.stunde}`;
+  const aktKey = kdAnwAktStunde
+    ? `${kdAnwAktStunde.kw}-${kdAnwAktStunde.jahr}-${kdAnwAktStunde.wochentag}-${kdAnwAktStunde.stunde}`
+    : '';
+
+  // Fach-Filter-Chips
+  const chipStyle = (f) => f === kdAnwFachFilter
+    ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;'
+    : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
 
   let html = `
+    <!-- Fach-Filter -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Fach:</span>
+      <button onclick="kdAnwSetFach(null)"
+        style="${chipStyle(null)}padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">Alle</button>
+      ${alleFaecher.map(f => `
+      <button onclick="kdAnwSetFach('${f.replace(/'/g,"\\'")}')"
+        style="${chipStyle(f)}padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">${f}</button>`).join('')}
+    </div>
+
+    <!-- Stunden-Dropdown (älteste zuerst) -->
     <div style="margin-bottom:16px;">
       <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Unterrichtsstunde wählen:</label>
-      <select onchange="(function(v){const p=v.split('-');kdAnwSetStunde(+p[0],+p[1],+p[2],+p[3]);})(this.value)"
-        style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--gray-200);font-size:13px;background:white;cursor:pointer;width:100%;max-width:380px;">
-        ${stundenRev.map(r => {
-          const rKey = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
-          const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
-          const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'UTC'});
-          const fachLabel = (r.fach||r._spFach) ? ` (${r.fach||r._spFach})` : '';
-          const istZukunft = datum > heuteEnde;
-          const zukunftLabel = istZukunft ? ' 📅' : '';
-          return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]} ${datumStr} · ${r.stunde}. Std.${fachLabel}${zukunftLabel}</option>`;
-        }).join('')}
-      </select>
+      ${gefiltertStunden.length === 0
+        ? `<div style="font-size:13px;color:var(--gray-400);padding:8px 0;">Keine Stunden für dieses Fach gefunden.</div>`
+        : `<select onchange="(function(v){const p=v.split('-');kdAnwSetStunde(+p[0],+p[1],+p[2],+p[3]);})(this.value)"
+          style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--gray-200);font-size:13px;background:white;cursor:pointer;width:100%;max-width:400px;">
+          ${gefiltertStunden.map(r => {
+            const rKey = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+            const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+            const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+            const fachLabel = (r.fach||r._spFach) ? ` · ${r.fach||r._spFach}` : '';
+            const istZukunft = datum > heuteEnde;
+            const zukunftLabel = istZukunft ? ' 📅' : '';
+            return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${r.stunde}. Std.${fachLabel}${zukunftLabel}</option>`;
+          }).join('')}
+        </select>`
+      }
     </div>`;
 
   if (kdSchueler.length === 0) {
