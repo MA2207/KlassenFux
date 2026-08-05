@@ -3499,6 +3499,30 @@ function nkUnterkatHinzufuegen(btn) {
   autoSave();
 }
 
+// Rundet auf 2 Nachkommastellen, um Fließkomma-Ungenauigkeiten beim 100%-Vergleich zu vermeiden
+function kdRundeProzent(wert) { return Math.round(wert * 100) / 100; }
+
+function nkSummeAnzeigen(summeEl, summe, rowCount, leerText) {
+  if (rowCount === 0) {
+    summeEl.textContent = leerText || '';
+    summeEl.style.color = 'var(--gray-400)';
+    summeEl.style.fontWeight = '400';
+    return;
+  }
+  const gerundet = kdRundeProzent(summe);
+  if (gerundet === 100) {
+    summeEl.textContent = `✓ Summe: 100%`;
+    summeEl.style.color = '#16a34a';
+    summeEl.style.fontWeight = '600';
+  } else {
+    const diff = kdRundeProzent(gerundet - 100);
+    const richtung = diff > 0 ? `${diff}% zu viel` : `${Math.abs(diff)}% zu wenig`;
+    summeEl.textContent = `⚠ Fehler: Summe ${gerundet}% (muss 100% sein, ${richtung})`;
+    summeEl.style.color = '#dc2626';
+    summeEl.style.fontWeight = '600';
+  }
+}
+
 function nkHauptkatSummeAktualisieren(el) {
   if (!el) return;
   const card = el.closest('.notenkonfig-fach');
@@ -3508,8 +3532,7 @@ function nkHauptkatSummeAktualisieren(el) {
   const rows = card.querySelectorAll('.nk-hauptkat-row');
   let summe = 0;
   rows.forEach(r => { summe += parseFloat(r.querySelector('[data-nk-hk-gewicht]')?.value) || 0; });
-  summeEl.textContent = rows.length ? `Summe Hauptkategorien: ${summe}%` : '';
-  summeEl.style.color = (rows.length === 0 || summe === 100) ? 'var(--gray-400)' : '#dc2626';
+  nkSummeAnzeigen(summeEl, summe, rows.length, '');
 }
 
 function nkUnterkatSummeAktualisieren(el) {
@@ -3521,8 +3544,7 @@ function nkUnterkatSummeAktualisieren(el) {
   const rows = hkRow.querySelectorAll('.nk-unterkat-row');
   let summe = 0;
   rows.forEach(r => { summe += parseFloat(r.querySelector('[data-nk-uk-gewicht]')?.value) || 0; });
-  summeEl.textContent = rows.length ? `Summe Unterkategorien: ${summe}%` : 'Keine Unterkategorien angelegt';
-  summeEl.style.color = (rows.length === 0 || summe === 100) ? 'var(--gray-400)' : '#dc2626';
+  nkSummeAnzeigen(summeEl, summe, rows.length, 'Keine Unterkategorien angelegt');
 }
 
 function kdNotenKonfigurationAuslesen() {
