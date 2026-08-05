@@ -1145,6 +1145,7 @@ let kdNotenEingabeart = 'direkt'; // 'direkt' | 'punkte'
 let kdNotenSchluesselIndex = 0;
 let kdNotenAktEintragId = null; // gesetzt = Bearbeitungsmodus
 let kdNotenMaskeOffen = false;  // true = Eingabemaske sichtbar
+let kdNotenUebFach = null;      // ausgewähltes Fach in der Notenübersicht
 
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
@@ -1190,6 +1191,7 @@ async function kdOeffneKlasse(klasseId) {
   kdNotenSchluesselIndex = 0;
   kdNotenAktEintragId = null;
   kdNotenMaskeOffen = false;
+  kdNotenUebFach = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung(), kdLadeNoten()]);
@@ -3184,12 +3186,175 @@ function kdRenderNotenListe() {
   return html;
 }
 
+function kdNotenUebSetFach(fach) { kdNotenUebFach = fach || null; kdRenderNoten(); }
+
+function kdRenderNotenUebFachChips(faecher) {
+  return `<label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Fach:</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${faecher.map(f => `<button onclick="kdNotenUebSetFach('${f.replace(/'/g, "\\'")}')"
+        style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+        ${f === kdNotenUebFach ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${f}</button>`).join('')}
+    </div>`;
+}
+
+// Ordnet einem Noteneintrag sein Halbjahr zu (Fallback für ältere Einträge ohne gespeichertes Halbjahr)
+function kdNotenEintragHalbjahr(eintrag) {
+  return eintrag.halbjahr || kdNotenHjFuerDatum(eintrag.datum);
+}
+
+// Wandelt den gespeicherten Notencode eines Schülers für einen Eintrag in den Dezimalwert um
+function kdNotenWertFuerSchueler(eintrag, schuelerId) {
+  const row = kdNotenWerte.find(w => w.noteneintrag_id === eintrag.id && w.schueler_id === schuelerId);
+  if (!row || !row.wert) return null;
+  if (eintrag.eingabeart === 'punkte' && eintrag.notenschluessel_index != null) {
+    const schema = kdNotenSchluesselListe()[eintrag.notenschluessel_index];
+    return schema?.dezimalwerte?.[row.wert] ?? KD_NOTE_MAP_DEFAULT[row.wert] ?? null;
+  }
+  return KD_NOTE_MAP_DEFAULT[row.wert] ?? null;
+}
+
+function kdNotenGewichteterMittelwert(werte) {
+  const gefiltert = werte.filter(w => w.wert != null && !isNaN(w.wert));
+  if (gefiltert.length === 0) return null;
+  const gesamtgewicht = gefiltert.reduce((s, w) => s + (w.gewicht || 0), 0);
+  if (gesamtgewicht <= 0) return gefiltert.reduce((s, w) => s + w.wert, 0) / gefiltert.length;
+  return gefiltert.reduce((s, w) => s + w.wert * (w.gewicht || 0), 0) / gesamtgewicht;
+}
+
+// Mittelwert eines Schülers innerhalb einer Hauptkategorie, ggf. gewichtet über die Unterkategorien
+function kdNotenHauptkatMittelwert(hk, entries, schuelerId) {
+  const unterkats = hk.unterkategorien || [];
+  if (unterkats.length === 0) {
+    const werte = entries.map(e => kdNotenWertFuerSchueler(e, schuelerId)).filter(v => v != null);
+    if (werte.length === 0) return null;
+    return werte.reduce((s, v) => s + v, 0) / werte.length;
+  }
+  const teilwerte = [];
+  unterkats.forEach(uk => {
+    const passende = entries.filter(e => e.unterkategorie === uk.name);
+    const werte = passende.map(e => kdNotenWertFuerSchueler(e, schuelerId)).filter(v => v != null);
+    if (werte.length > 0) teilwerte.push({ wert: werte.reduce((s, v) => s + v, 0) / werte.length, gewicht: uk.gewicht || 0 });
+  });
+  const ohneEntries = entries.filter(e => !unterkats.some(uk => uk.name === e.unterkategorie));
+  const ohneWerte = ohneEntries.map(e => kdNotenWertFuerSchueler(e, schuelerId)).filter(v => v != null);
+  if (ohneWerte.length > 0) {
+    const restGewicht = Math.max(0, 100 - unterkats.reduce((s, u) => s + (u.gewicht || 0), 0));
+    teilwerte.push({ wert: ohneWerte.reduce((s, v) => s + v, 0) / ohneWerte.length, gewicht: restGewicht > 0 ? restGewicht : (100 / (unterkats.length + 1)) });
+  }
+  return kdNotenGewichteterMittelwert(teilwerte);
+}
+
+// Gesamtmittelwert eines Halbjahres, gewichtet über die Hauptkategorien
+function kdNotenHjMittelwert(blocks, schuelerId) {
+  const teilwerte = blocks.map(b => ({ wert: kdNotenHauptkatMittelwert(b.hk, b.entries, schuelerId), gewicht: b.hk.gewicht || 0 }));
+  return kdNotenGewichteterMittelwert(teilwerte);
+}
+
 function kdRenderNotenUebersicht() {
-  return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
-    <div style="font-size:2.5rem;margin-bottom:12px;">📊</div>
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Notenübersicht folgt</div>
-    <div style="font-size:13px;">Die Übersicht bauen wir als Nächstes.</div>
-  </div>`;
+  const faecher = kdNotenKlassenFaecher();
+  if (faecher.length === 0) {
+    return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📊</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Fächer in dieser Klasse</div>
+      <div style="font-size:13px;">Weise dieser Klasse im Stundenplan Fächer zu.</div>
+    </div>`;
+  }
+  if (!kdNotenUebFach || !faecher.includes(kdNotenUebFach)) kdNotenUebFach = faecher[0];
+
+  let html = `<div style="margin-bottom:18px;">${kdRenderNotenUebFachChips(faecher)}</div>`;
+
+  const hauptkatConfig = kdNotenHauptkategorien(kdNotenUebFach);
+  const alleEintraegeFach = kdNotenEintraege.filter(e => e.fach === kdNotenUebFach);
+
+  if (alleEintraegeFach.length === 0 || kdSchueler.length === 0) {
+    html += `<div style="text-align:center;padding:32px 24px;color:var(--gray-400);font-size:13px;">Noch keine Noten für ${kdNotenUebFach} eingetragen.</div>`;
+    return html;
+  }
+
+  function baueBlocks(hj) {
+    const entriesHj = alleEintraegeFach.filter(e => kdNotenEintragHalbjahr(e) === hj).sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
+    const blocks = [];
+    hauptkatConfig.forEach(hk => {
+      const entries = entriesHj.filter(e => e.hauptkategorie === hk.name);
+      if (entries.length > 0) blocks.push({ hk, entries });
+    });
+    const bekannt = new Set(hauptkatConfig.map(h => h.name));
+    const unbekannt = entriesHj.filter(e => !bekannt.has(e.hauptkategorie));
+    if (unbekannt.length > 0) blocks.push({ hk: { name: 'Sonstige', gewicht: 0, farbe: '#9ca3af', unterkategorien: [] }, entries: unbekannt });
+    return blocks;
+  }
+
+  const blocksHj1 = baueBlocks(1);
+  const blocksHj2 = baueBlocks(2);
+
+  if (blocksHj1.length === 0 && blocksHj2.length === 0) {
+    html += `<div style="text-align:center;padding:32px 24px;color:var(--gray-400);font-size:13px;">Noch keine Noten für ${kdNotenUebFach} eingetragen.</div>`;
+    return html;
+  }
+
+  const fmt = (v) => v == null ? '–' : v.toFixed(2).replace('.', ',');
+  const zellStil = (v) => `padding:6px 8px;text-align:center;font-size:12px;${v != null && v >= 4 ? 'color:#dc2626;font-weight:700;' : 'color:var(--gray-700);'}`;
+  const kuerzel = (titel) => !titel ? '–' : (titel.length > 10 ? titel.slice(0, 9) + '…' : titel);
+  const HJ_FARBE = { 1: '#7dd3fc', 2: '#f0a8a8' };
+  const HJ_LABEL = { 1: '1. Halbjahr', 2: '2. Halbjahr' };
+
+  let kopf1 = `<th rowspan="3" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Nr.</th>
+    <th rowspan="3" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Nachname</th>
+    <th rowspan="3" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Vorname</th>`;
+  let kopf2 = '';
+  let kopf3 = '';
+
+  [1, 2].forEach(hj => {
+    const blocks = hj === 1 ? blocksHj1 : blocksHj2;
+    if (blocks.length === 0) return;
+    const spaltenGesamt = blocks.reduce((s, b) => s + b.entries.length + 1, 0) + 1;
+    kopf1 += `<th colspan="${spaltenGesamt}" style="background:${HJ_FARBE[hj]};padding:8px;font-size:14px;">${HJ_LABEL[hj]}</th>`;
+    blocks.forEach(b => {
+      kopf2 += `<th colspan="${b.entries.length + 1}" style="background:${b.hk.farbe || '#fde68a'};padding:6px;font-size:12px;color:white;">${b.hk.name}</th>`;
+      b.entries.forEach(e => {
+        kopf3 += `<th style="background:var(--gray-50,#f9fafb);padding:5px 6px;font-size:11px;font-weight:600;" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzel(e.titel)}</th>`;
+      });
+      kopf3 += `<th style="background:var(--gray-200);padding:5px 6px;font-size:11px;font-weight:700;">Mittelwert</th>`;
+    });
+    kopf2 += `<th rowspan="2" style="background:${HJ_FARBE[hj]};padding:6px;font-size:12px;font-weight:700;">${HJ_LABEL[hj]}</th>`;
+  });
+
+  html += `<div style="overflow-x:auto;">
+    <table style="border-collapse:collapse;width:100%;">
+      <thead>
+        <tr>${kopf1}</tr>
+        <tr>${kopf2}</tr>
+        <tr>${kopf3}</tr>
+      </thead>
+      <tbody>`;
+
+  kdSchueler.forEach((s, idx) => {
+    const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50, #f9fafb)';
+    html += `<tr style="background:${rowBg};">
+      <td style="padding:5px 10px;font-size:12px;color:var(--gray-500);border-top:1px solid var(--gray-100);">${idx + 1}</td>
+      <td style="padding:5px 10px;font-size:12px;font-weight:600;border-top:1px solid var(--gray-100);">${s.nachname}</td>
+      <td style="padding:5px 10px;font-size:12px;border-top:1px solid var(--gray-100);">${s.vorname}</td>`;
+
+    [1, 2].forEach(hj => {
+      const blocks = hj === 1 ? blocksHj1 : blocksHj2;
+      if (blocks.length === 0) return;
+      blocks.forEach(b => {
+        b.entries.forEach(e => {
+          const v = kdNotenWertFuerSchueler(e, s.id);
+          html += `<td style="${zellStil(v)}border-top:1px solid var(--gray-100);">${fmt(v)}</td>`;
+        });
+        const mw = kdNotenHauptkatMittelwert(b.hk, b.entries, s.id);
+        html += `<td style="${zellStil(mw)}border-top:1px solid var(--gray-100);background:var(--gray-50,#f9fafb);">${fmt(mw)}</td>`;
+      });
+      const hjMw = kdNotenHjMittelwert(blocks, s.id);
+      html += `<td style="${zellStil(hjMw)}border-top:1px solid var(--gray-100);background:${HJ_FARBE[hj]}33;font-weight:700;">${fmt(hjMw)}</td>`;
+    });
+
+    html += `</tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  return html;
 }
 
 function kdRenderNoten() {
