@@ -1097,7 +1097,7 @@ function filterKlassen(q) {
 
 // ── KLASSE DETAIL / CHECKLISTE ──
 let kdAktiveKlasseId = null;
-let kdAktiveUnterseite = 'checkliste';
+let kdAktiveUnterseite = 'unterricht';
 let kdSchueler = [];
 let kdSpalten = [];
 let kdEintraege = {};
@@ -1152,7 +1152,7 @@ let kdUbUebFachFilter = null;
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
   // Aktuelle KW suchen, sonst nächste verfügbare
-  let el = document.getElementById(`kd-kw-${jahr}-${kw}`);
+  let el = document.getElementById(`kd-kw-${jahr}-${String(kw).padStart(2,'0')}`);
   if (!el) {
     // Nächste KW nach heute finden
     const keys = [...document.querySelectorAll('[id^="kd-kw-"]')]
@@ -1191,7 +1191,8 @@ async function kdOeffneKlasse(klasseId) {
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung(), kdLadeNoten()]);
-  kdZeigeUnterseite('checkliste');
+  await kdZeigeUnterseite('unterricht');
+  kdScrollZuHeute();
 }
 
 function kdZeigeUnterseite(seite) {
@@ -1203,12 +1204,13 @@ function kdZeigeUnterseite(seite) {
     btn.style.fontWeight = isActive ? '700' : '400';
     btn.style.boxShadow = isActive ? '0 0 0 2px #86efac' : 'none';
   });
-  if (seite === 'checkliste') kdRenderCheckliste();
-  if (seite === 'unterricht') { kdLadeUnterricht().then(() => kdRenderUnterricht()); }
-  if (seite === 'anwesenheit') { kdLadeAnwesenheit().then(() => kdRenderAnwesenheit()); }
-  if (seite === 'hausaufgaben') { kdLadeHausaufgaben().then(() => kdRenderHausaufgaben()); }
-  if (seite === 'beobachtung') { kdLadeBeobachtung().then(() => kdRenderBeobachtung()); }
-  if (seite === 'noten') { kdLadeNoten().then(() => kdRenderNoten()); }
+  if (seite === 'checkliste') { kdRenderCheckliste(); return Promise.resolve(); }
+  if (seite === 'unterricht') { return kdLadeUnterricht().then(() => kdRenderUnterricht()); }
+  if (seite === 'anwesenheit') { return kdLadeAnwesenheit().then(() => kdRenderAnwesenheit()); }
+  if (seite === 'hausaufgaben') { return kdLadeHausaufgaben().then(() => kdRenderHausaufgaben()); }
+  if (seite === 'beobachtung') { return kdLadeBeobachtung().then(() => kdRenderBeobachtung()); }
+  if (seite === 'noten') { return kdLadeNoten().then(() => kdRenderNoten()); }
+  return Promise.resolve();
 }
 
 async function kdLadeCheckliste() {
