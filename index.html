@@ -1077,11 +1077,14 @@ let kdSchueler = [];
 let kdSpalten = [];
 let kdEintraege = {};
 let kdUnterricht = [];
+let kdUnterrichtFachFilter = null;
+let kdHj1Start = null, kdHj1Ende = null, kdHj2Start = null, kdHj2Ende = null;
 
 async function kdOeffneKlasse(klasseId) {
   const klasse = allKlassen.find(k => k.id === klasseId);
   if (!klasse) return;
   kdAktiveKlasseId = klasseId;
+  kdUnterrichtFachFilter = null; // Filter zurücksetzen beim Klassenwechsel
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht()]);
@@ -1146,6 +1149,12 @@ async function kdLadeUnterricht() {
   const schuljahresEnde = einst.hj2_ende
     ? new Date(einst.hj2_ende + 'T12:00:00')
     : heute;
+
+  // Halbjahr-Grenzen global speichern für Render
+  kdHj1Start = einst.hj1_start || null;
+  kdHj1Ende  = einst.hj1_ende  || null;
+  kdHj2Start = einst.hj2_start || null;
+  kdHj2Ende  = einst.hj2_ende  || null;
 
   // Alle (wochentag, stunde) Paare dieser Klasse sammeln (über alle Versionen)
   const klasseSlots = {}; // "wd-std" → { wochentag, stunde, fach }
@@ -1276,25 +1285,60 @@ function kdRenderUnterricht() {
 
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
 
-  // Nach KW+Jahr gruppieren
+  // Alle Fächer dieser Klasse ermitteln
+  const alleFaecher = [...new Set(kdUnterricht.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+
+  // Gefilterter Datensatz
+  const gefiltertList = kdUnterrichtFachFilter
+    ? kdUnterricht.filter(r => (r.fach || r._spFach) === kdUnterrichtFachFilter)
+    : kdUnterricht;
+
+  // Halbjahr-Hilfsfunktion: gibt 1, 2 oder 0 (unbekannt) zurück
+  function halbjahrFuerDatum(datumStr) {
+    if (kdHj1Start && kdHj1Ende && datumStr >= kdHj1Start && datumStr <= kdHj1Ende) return 1;
+    if (kdHj2Start && kdHj2Ende && datumStr >= kdHj2Start && datumStr <= kdHj2Ende) return 2;
+    return 0;
+  }
+
+  // Nach KW+Jahr gruppieren (aus gefiltertem Datensatz)
   const gruppen = {};
-  kdUnterricht.forEach(r => {
+  gefiltertList.forEach(r => {
     const key = `${r.jahr}-${String(r.kalenderwoche).padStart(2,'0')}`;
     if (!gruppen[key]) gruppen[key] = { kw: r.kalenderwoche, jahr: r.jahr, zeilen: [] };
     gruppen[key].zeilen.push(r);
   });
   const gruppenKeys = Object.keys(gruppen).sort(); // aufsteigend: erste KW zuerst
 
-  // Gesamtzahl
-  const gesamt = kdUnterricht.length;
-  const mitInhalt = kdUnterricht.filter(r => r.inhalt).length;
+  // Statistik (immer über alle, nicht nur gefiltert)
+  const gesamt = gefiltertList.length;
+  const mitInhalt = gefiltertList.filter(r => r.inhalt).length;
+
+  // Fach-Filter-Chips
+  const chipStyle = (fach) => fach === kdUnterrichtFachFilter
+    ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;'
+    : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
 
   let html = `
+    <!-- Fach-Filter -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Fach:</span>
+      <button onclick="kdUnterrichtFachFilter=null;kdRenderUnterricht()"
+        style="${null === kdUnterrichtFachFilter ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);'}
+        padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">
+        Alle
+      </button>
+      ${alleFaecher.map(f => `
+      <button onclick="kdUnterrichtFachFilter=${JSON.stringify(f)};kdRenderUnterricht()"
+        style="${chipStyle(f)}padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">
+        ${f}
+      </button>`).join('')}
+    </div>
+
     <!-- Zusammenfassung -->
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
       <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
         <span style="font-size:22px;font-weight:700;color:var(--gray-800);">${gesamt}</span>
-        <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Stunden gesamt</span>
+        <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Stunden${kdUnterrichtFachFilter ? ' (gefiltert)' : ' gesamt'}</span>
       </div>
       <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
         <span style="font-size:22px;font-weight:700;color:#16a34a;">${mitInhalt}</span>
@@ -1315,17 +1359,27 @@ function kdRenderUnterricht() {
     const g = gruppen[key];
     const monday = getMondayOfWeek(g.kw, g.jahr);
     const friday = new Date(monday); friday.setUTCDate(monday.getUTCDate() + 4);
+    const mondayStr = monday.toISOString().split('T')[0];
     const vonStr = monday.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', timeZone:'UTC'});
     const bisStr = friday.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC'});
     const stundenMitInhalt = g.zeilen.filter(r => r.inhalt).length;
+
+    // Halbjahr ermitteln
+    const hj = halbjahrFuerDatum(mondayStr);
+    const hjBadge = hj === 1
+      ? '<span style="font-size:10px;font-weight:700;background:rgba(255,255,255,0.18);padding:2px 8px;border-radius:10px;letter-spacing:0.04em;">HJ 1</span>'
+      : hj === 2
+      ? '<span style="font-size:10px;font-weight:700;background:rgba(255,200,100,0.25);color:#fde68a;padding:2px 8px;border-radius:10px;letter-spacing:0.04em;">HJ 2</span>'
+      : '';
 
     html += `
     <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.04);">
 
       <!-- KW-Header -->
       <div style="background:var(--gray-800);color:white;padding:11px 16px;display:flex;align-items:center;gap:0;justify-content:space-between;">
-        <div style="display:flex;align-items:baseline;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
           <span style="font-size:18px;font-weight:800;letter-spacing:-0.02em;">KW ${g.kw}</span>
+          ${hjBadge}
           <span style="font-size:13px;font-weight:500;opacity:0.7;">${vonStr} – ${bisStr}</span>
         </div>
         <span style="font-size:11px;font-weight:600;opacity:0.55;">${stundenMitInhalt}/${g.zeilen.length} Std.</span>
