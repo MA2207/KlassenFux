@@ -652,6 +652,26 @@
       <div id="notenkonfig-list"></div>
     </div>
 
+    <!-- Zeugnisnote: Gewichtung HJ -->
+    <div class="settings-section">
+      <div class="settings-section-title">Zeugnisnote — Gewichtung 1. / 2. Halbjahr</div>
+      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">
+        Legt fest, zu wie viel Prozent das 1. und das 2. Halbjahr in die Jahresendnote (Zeugnisnote im 2. Halbjahr) eingehen.
+      </p>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">1. Halbjahr</label>
+          <input class="form-input" type="number" min="0" max="100" id="set-zeugnis-hj1" value="30"
+            oninput="kdZeugnisGewichtungSync('hj1'); autoSave();" style="width:90px;"> %
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">2. Halbjahr</label>
+          <input class="form-input" type="number" min="0" max="100" id="set-zeugnis-hj2" value="70"
+            oninput="kdZeugnisGewichtungSync('hj2'); autoSave();" style="width:90px;"> %
+        </div>
+      </div>
+    </div>
+
     <!-- Bundesland & Ferien -->
     <div class="settings-section">
       <div class="settings-section-title">Bundesland &amp; Schulferien</div>
@@ -718,26 +738,6 @@
         📅 Stundenplan-Versionen für beide Halbjahre anlegen
       </button>
       <div id="hj-versionen-status" style="font-size:0.8rem;color:var(--gray-400);margin-top:8px;"></div>
-    </div>
-
-    <!-- Zeugnisnote: Gewichtung HJ -->
-    <div class="settings-section">
-      <div class="settings-section-title">Zeugnisnote — Gewichtung 1. / 2. Halbjahr</div>
-      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">
-        Legt fest, zu wie viel Prozent das 1. und das 2. Halbjahr in die Jahresendnote (Zeugnisnote im 2. Halbjahr) eingehen.
-      </p>
-      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">1. Halbjahr</label>
-          <input class="form-input" type="number" min="0" max="100" id="set-zeugnis-hj1" value="30"
-            oninput="kdZeugnisGewichtungSync('hj1'); autoSave();" style="width:90px;"> %
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">2. Halbjahr</label>
-          <input class="form-input" type="number" min="0" max="100" id="set-zeugnis-hj2" value="70"
-            oninput="kdZeugnisGewichtungSync('hj2'); autoSave();" style="width:90px;"> %
-        </div>
-      </div>
     </div>
 
     <!-- Unterrichtsfreie Tage -->
