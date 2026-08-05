@@ -1079,6 +1079,20 @@ let kdEintraege = {};
 let kdUnterricht = [];
 let kdUnterrichtFachFilter = null;
 function kdSetFachFilter(f) { kdUnterrichtFachFilter = f || null; kdRenderUnterricht(); }
+function kdScrollZuHeute() {
+  const { kw, jahr } = getISOWeek(new Date());
+  // Aktuelle KW suchen, sonst nächste verfügbare
+  let el = document.getElementById(`kd-kw-${jahr}-${kw}`);
+  if (!el) {
+    // Nächste KW nach heute finden
+    const keys = [...document.querySelectorAll('[id^="kd-kw-"]')]
+      .map(e => e.id).sort();
+    const target = `kd-kw-${jahr}-${String(kw).padStart(2,'0')}`;
+    const next = keys.find(k => k >= target);
+    if (next) el = document.getElementById(next);
+  }
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 let kdHj1Start = null, kdHj1Ende = null, kdHj2Start = null, kdHj2Ende = null;
 
 async function kdOeffneKlasse(klasseId) {
@@ -1320,8 +1334,13 @@ function kdRenderUnterricht() {
     : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
 
   let html = `
-    <!-- Fach-Filter -->
+    <!-- Toolbar: Heute + Fach-Filter -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <button onclick="kdScrollZuHeute()"
+        style="background:#16a34a;color:white;border:2px solid #16a34a;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+        📅 Heute
+      </button>
+      <span style="width:1px;height:22px;background:var(--gray-200);display:inline-block;margin:0 2px;"></span>
       <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Fach:</span>
       <button onclick="kdSetFachFilter(null)"
         style="${null === kdUnterrichtFachFilter ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);'}padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">
@@ -1373,7 +1392,7 @@ function kdRenderUnterricht() {
       : '';
 
     html += `
-    <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.04);">
+    <div id="kd-kw-${g.jahr}-${String(g.kw).padStart(2,'0')}" style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.04);">
 
       <!-- KW-Header -->
       <div style="background:var(--gray-800);color:white;padding:11px 16px;display:flex;align-items:center;gap:0;justify-content:space-between;">
