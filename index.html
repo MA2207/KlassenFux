@@ -1146,6 +1146,8 @@ let kdNotenSchluesselIndex = 0;
 let kdNotenAktEintragId = null; // gesetzt = Bearbeitungsmodus
 let kdNotenMaskeOffen = false;  // true = Eingabemaske sichtbar
 let kdNotenUebFach = null;      // ausgewähltes Fach in der Notenübersicht
+let kdNotenUebKollabiert = new Set(); // eingeklappte Hauptkategorie-Blöcke, Key: "<hj>::<hauptkatname>"
+let kdNotenZeugnisManuell = []; // manuell erteilte Zeugnisnoten (Tabelle zeugnisnoten)
 
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
@@ -1192,6 +1194,7 @@ async function kdOeffneKlasse(klasseId) {
   kdNotenAktEintragId = null;
   kdNotenMaskeOffen = false;
   kdNotenUebFach = null;
+  kdNotenUebKollabiert = new Set();
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung(), kdLadeNoten()]);
@@ -2783,12 +2786,14 @@ function kdRenderUbUebersicht(alleStunden) {
 // ── NOTEN ────────────────────────────────────────────────────────
 
 async function kdLadeNoten() {
-  const [{ data: einst }, { data: eintraege }] = await Promise.all([
+  const [{ data: einst }, { data: eintraege }, { data: zeugnis }] = await Promise.all([
     sb.from('einstellungen').select('daten').eq('id', 1).single(),
     sb.from('noteneintraege').select('*').eq('klasse_id', kdAktiveKlasseId).order('datum', { ascending: false }),
+    sb.from('zeugnisnoten').select('*').eq('klasse_id', kdAktiveKlasseId),
   ]);
   kdNotenEinst = einst?.daten || {};
   kdNotenEintraege = eintraege || [];
+  kdNotenZeugnisManuell = zeugnis || [];
   kdNotenWerte = [];
   if (kdNotenEintraege.length > 0) {
     const { data: werte } = await sb.from('noten').select('*').in('noteneintrag_id', kdNotenEintraege.map(e => e.id));
@@ -3250,6 +3255,28 @@ function kdNotenHjMittelwert(blocks, schuelerId) {
   return kdNotenGewichteterMittelwert(teilwerte);
 }
 
+function kdNotenUebToggleBlock(hj, hkName) {
+  const key = hj + '::' + hkName;
+  if (kdNotenUebKollabiert.has(key)) kdNotenUebKollabiert.delete(key);
+  else kdNotenUebKollabiert.add(key);
+  kdRenderNoten();
+}
+
+function kdNotenErteilteNote(fach, schuelerId, halbjahr) {
+  const row = kdNotenZeugnisManuell.find(z => z.fach === fach && z.schueler_id === schuelerId && z.halbjahr === halbjahr);
+  return row?.note || null;
+}
+
+async function kdNotenErteilteNoteSpeichern(fach, schuelerId, halbjahr, note) {
+  const daten = { klasse_id: kdAktiveKlasseId, fach, schueler_id: schuelerId, halbjahr, note: note || null };
+  const { data, error } = await sb.from('zeugnisnoten')
+    .upsert(daten, { onConflict: 'klasse_id,fach,schueler_id,halbjahr' })
+    .select().single();
+  if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+  const idx = kdNotenZeugnisManuell.findIndex(z => z.fach === fach && z.schueler_id === schuelerId && z.halbjahr === halbjahr);
+  if (idx >= 0) kdNotenZeugnisManuell[idx] = data; else kdNotenZeugnisManuell.push(data);
+}
+
 // Ermittelt zum nächstgelegenen Notencode (für die errechnete Zeugnisnote)
 function kdNotenNaechsterCode(dez) {
   if (dez == null || isNaN(dez)) return null;
@@ -3325,7 +3352,8 @@ function kdRenderNotenUebersicht() {
   const HJ_FARBE = { 1: '#7dd3fc', 2: '#f0a8a8' };
   const HJ_LABEL = { 1: '1. Halbjahr', 2: '2. Halbjahr' };
 
-  const blockSpalten = (b) => b.subgroups.reduce((s, sg) => s + sg.entries.length + 1, 0) + (b.hatUnterkat ? 1 : 0);
+  const blockSpalten = (b, eingeklappt) => eingeklappt ? 1 : (b.subgroups.reduce((s, sg) => s + sg.entries.length + 1, 0) + (b.hatUnterkat ? 1 : 0));
+  const istEingeklappt = (hj, hkName) => kdNotenUebKollabiert.has(hj + '::' + hkName);
 
   let kopf1 = `<th rowspan="4" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Nr.</th>
     <th rowspan="4" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Nachname</th>
@@ -3336,11 +3364,14 @@ function kdRenderNotenUebersicht() {
 
   [1, 2].forEach(hj => {
     const blocks = hj === 1 ? blocksHj1 : blocksHj2;
-    const spaltenGesamt = blocks.reduce((s, b) => s + blockSpalten(b), 0) + 2; // +1 HJ-Mittelwert, +1 Zeugnisnote
+    const spaltenGesamt = blocks.reduce((s, b) => s + blockSpalten(b, istEingeklappt(hj, b.hk.name)), 0) + 3; // +1 HJ-Mittelwert, +1 errechnete Zeugnisnote, +1 erteilte Zeugnisnote
     kopf1 += `<th colspan="${spaltenGesamt}" style="background:${HJ_FARBE[hj]};padding:8px;font-size:14px;">${HJ_LABEL[hj]}</th>`;
 
     blocks.forEach(b => {
-      kopf2 += `<th colspan="${blockSpalten(b)}" style="background:${b.hk.farbe || '#fde68a'};padding:6px;font-size:12px;color:white;">${b.hk.name}</th>`;
+      const eingeklappt = istEingeklappt(hj, b.hk.name);
+      const icon = eingeklappt ? '▸' : '▾';
+      kopf2 += `<th colspan="${blockSpalten(b, eingeklappt)}" rowspan="${eingeklappt ? 3 : 1}" onclick="kdNotenUebToggleBlock(${hj},'${b.hk.name.replace(/'/g, "\\'")}')" title="Ein-/Ausklappen" style="background:${b.hk.farbe || '#fde68a'};padding:6px;font-size:12px;color:white;cursor:pointer;">${icon} ${b.hk.name}</th>`;
+      if (eingeklappt) return;
       if (b.hatUnterkat) {
         b.subgroups.forEach(sg => {
           kopf3 += `<th colspan="${sg.entries.length + 1}" style="background:var(--gray-100);padding:4px 6px;font-size:10px;font-weight:600;color:var(--gray-600);">${sg.name}</th>`;
@@ -3359,7 +3390,8 @@ function kdRenderNotenUebersicht() {
     });
 
     kopf2 += `<th rowspan="3" style="background:${HJ_FARBE[hj]};padding:6px;font-size:12px;font-weight:700;">${HJ_LABEL[hj]}</th>`;
-    kopf2 += `<th rowspan="3" style="background:${HJ_FARBE[hj]};padding:6px;font-size:11px;font-weight:700;">Zeugnisnote<br>${HJ_LABEL[hj]}</th>`;
+    kopf2 += `<th rowspan="3" style="background:${HJ_FARBE[hj]};padding:6px;font-size:11px;font-weight:700;">errechnete<br>Zeugnisnote ${hj}. Hj</th>`;
+    kopf2 += `<th rowspan="3" style="background:${HJ_FARBE[hj]};padding:6px;font-size:11px;font-weight:700;">erteilte<br>Zeugnisnote ${hj}. Hj</th>`;
   });
 
   html += `<div style="overflow-x:auto;">
@@ -3384,17 +3416,20 @@ function kdRenderNotenUebersicht() {
     [1, 2].forEach(hj => {
       const blocks = hj === 1 ? blocksHj1 : blocksHj2;
       blocks.forEach(b => {
-        b.subgroups.forEach(sg => {
-          sg.entries.forEach(e => {
-            const v = kdNotenWertFuerSchueler(e, s.id);
-            html += `<td style="${zellStil(v)}border-top:1px solid var(--gray-100);">${fmt(v)}</td>`;
+        const eingeklappt = istEingeklappt(hj, b.hk.name);
+        if (!eingeklappt) {
+          b.subgroups.forEach(sg => {
+            sg.entries.forEach(e => {
+              const v = kdNotenWertFuerSchueler(e, s.id);
+              html += `<td style="${zellStil(v)}border-top:1px solid var(--gray-100);">${fmt(v)}</td>`;
+            });
+            if (b.hatUnterkat) {
+              const sgWerte = sg.entries.map(e => kdNotenWertFuerSchueler(e, s.id)).filter(v => v != null);
+              const sgMw = sgWerte.length > 0 ? sgWerte.reduce((a, v) => a + v, 0) / sgWerte.length : null;
+              html += `<td style="${zellStil(sgMw)}border-top:1px solid var(--gray-100);background:var(--gray-50,#f9fafb);">${fmt(sgMw)}</td>`;
+            }
           });
-          if (b.hatUnterkat) {
-            const sgWerte = sg.entries.map(e => kdNotenWertFuerSchueler(e, s.id)).filter(v => v != null);
-            const sgMw = sgWerte.length > 0 ? sgWerte.reduce((a, v) => a + v, 0) / sgWerte.length : null;
-            html += `<td style="${zellStil(sgMw)}border-top:1px solid var(--gray-100);background:var(--gray-50,#f9fafb);">${fmt(sgMw)}</td>`;
-          }
-        });
+        }
         const mw = kdNotenHauptkatMittelwert(b.hk, b.alleEntries, s.id);
         html += `<td style="${zellStil(mw)}border-top:1px solid var(--gray-100);background:var(--gray-50,#f9fafb);">${fmt(mw)}</td>`;
       });
@@ -3405,6 +3440,16 @@ function kdRenderNotenUebersicht() {
       const zeugnisDez = hj === 1 ? hj1Mw : kdNotenGewichteterMittelwert([{ wert: hj1Mw, gewicht: zg.hj1 }, { wert: hj2Mw, gewicht: zg.hj2 }]);
       const zeugnisCode = kdNotenNaechsterCode(zeugnisDez);
       html += `<td style="padding:6px 8px;text-align:center;font-size:13px;font-weight:700;border-top:1px solid var(--gray-100);background:${HJ_FARBE[hj]}55;color:var(--gray-800);">${zeugnisCode || '–'}</td>`;
+
+      const erteilt = kdNotenErteilteNote(kdNotenUebFach, s.id, hj);
+      const auswahlWert = erteilt || zeugnisCode || '';
+      html += `<td style="padding:4px 6px;text-align:center;border-top:1px solid var(--gray-100);background:${HJ_FARBE[hj]}22;">
+        <select onchange="kdNotenErteilteNoteSpeichern('${kdNotenUebFach.replace(/'/g, "\\'")}','${s.id}',${hj},this.value)"
+          style="width:64px;padding:3px 4px;border:1px solid var(--gray-200);border-radius:4px;font-size:12px;font-weight:700;text-align:center;">
+          <option value="">–</option>
+          ${KD_NOTEN_CODES.map(code => `<option value="${code}" ${code === auswahlWert ? 'selected' : ''}>${code}</option>`).join('')}
+        </select>
+      </td>`;
     });
 
     html += `</tr>`;
