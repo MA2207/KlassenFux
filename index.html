@@ -1098,7 +1098,7 @@ function kdZeigeUnterseite(seite) {
     btn.style.boxShadow = isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
   });
   if (seite === 'checkliste') kdRenderCheckliste();
-  if (seite === 'unterricht') kdRenderUnterricht();
+  if (seite === 'unterricht') { kdLadeUnterricht().then(() => kdRenderUnterricht()); }
 }
 
 async function kdLadeCheckliste() {
@@ -1139,12 +1139,13 @@ async function kdLadeUnterricht() {
     planIdx[`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`] = r;
   });
 
+  const slotSet = new Set();
   kdUnterricht = [];
 
+  // 2. Slots aus Stundenplan-Versionen generieren (wenn klasse_id dort gesetzt ist)
   for (const version of (versionen || [])) {
     if (!version.gueltig_ab) continue;
 
-    // SP-Slots dieser Klasse in dieser Version
     const { data: spSlots } = await sb.from('stundenplan')
       .select('wochentag,stunde,fach')
       .eq('version_id', version.id)
@@ -1152,9 +1153,7 @@ async function kdLadeUnterricht() {
     if (!spSlots || spSlots.length === 0) continue;
 
     const start = new Date(version.gueltig_ab + 'T12:00:00');
-    const end   = version.gueltig_bis
-      ? new Date(version.gueltig_bis + 'T12:00:00')
-      : heute;
+    const end   = version.gueltig_bis ? new Date(version.gueltig_bis + 'T12:00:00') : heute;
     const bis   = end > heute ? heute : end;
 
     const { kw: sKW, jahr: sJahr } = getISOWeek(start);
@@ -1164,19 +1163,16 @@ async function kdLadeUnterricht() {
     while (curJahr * 100 + curKW <= eJahr * 100 + eKW) {
       for (const sp of spSlots) {
         const rKey = `${curKW}-${curJahr}-${sp.wochentag}-${sp.stunde}`;
+        if (slotSet.has(rKey)) continue;
+        slotSet.add(rKey);
         const plan = planIdx[rKey] || {};
         kdUnterricht.push({
-          _key: rKey,
-          id: plan.id || null,
-          kalenderwoche: curKW,
-          jahr: curJahr,
-          wochentag: sp.wochentag,
-          stunde: sp.stunde,
-          fach: plan.fach !== undefined ? plan.fach : (sp.fach || ''),
-          inhalt: plan.inhalt || '',
-          hausaufgaben: plan.hausaufgaben || '',
-          notiz: plan.notiz || '',
-          _spFach: sp.fach || '',
+          _key: rKey, id: plan.id||null,
+          kalenderwoche: curKW, jahr: curJahr,
+          wochentag: sp.wochentag, stunde: sp.stunde,
+          fach: plan.fach !== undefined ? plan.fach : (sp.fach||''),
+          inhalt: plan.inhalt||'', hausaufgaben: plan.hausaufgaben||'', notiz: plan.notiz||'',
+          _spFach: sp.fach||'',
         });
       }
       curKW++;
@@ -1184,6 +1180,21 @@ async function kdLadeUnterricht() {
       if (curKW > maxKW) { curKW = 1; curJahr++; }
     }
   }
+
+  // 3. Fallback: unterrichtsplanung-Einträge die noch nicht im Set sind direkt hinzufügen
+  //    (z.B. wenn Stundenplan-Einträge keine klasse_id haben, aber Planung schon)
+  (planRows || []).forEach(r => {
+    const rKey = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+    if (slotSet.has(rKey)) return;
+    slotSet.add(rKey);
+    kdUnterricht.push({
+      _key: rKey, id: r.id,
+      kalenderwoche: r.kalenderwoche, jahr: r.jahr,
+      wochentag: r.wochentag, stunde: r.stunde,
+      fach: r.fach||'', inhalt: r.inhalt||'', hausaufgaben: r.hausaufgaben||'', notiz: r.notiz||'',
+      _spFach: r.fach||'',
+    });
+  });
 
   // Absteigend nach Datum, dann aufsteigend nach Wochentag & Stunde
   kdUnterricht.sort((a, b) => {
