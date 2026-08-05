@@ -2418,22 +2418,19 @@ function kdRenderBeobachtung() {
 }
 
 function kdRenderUbErfassen(alleStunden) {
-  if (alleStunden.length === 0)
-    return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Unterrichtsstunden geplant.</div>`;
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const heute = new Date();
+  const heuteEnde = new Date(heute); heuteEnde.setUTCHours(23, 59, 59, 999);
 
-  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
-  let html = '';
-  if (alleFaecher.length > 1) {
-    const chipStyle = (f) => f === kdUbFachFilter
-      ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
-      : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
-    html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
-      <span style="font-size:12px;font-weight:600;color:var(--gray-500);">Fach:</span>
-      <button onclick="kdUbSetFach(null)" style="${chipStyle(null)}">Alle</button>
-      ${alleFaecher.map(f => `<button onclick="kdUbSetFach('${f.replace(/'/g,"\\'")}')" style="${chipStyle(f)}">${f}</button>`).join('')}
+  if (alleStunden.length === 0) {
+    return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📅</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Stunden gefunden</div>
+      <div style="font-size:13px;">Weise dieser Klasse im Stundenplan Stunden zu.</div>
     </div>`;
   }
 
+  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
   const gefiltert = kdUbFachFilter
     ? alleStunden.filter(r => (r.fach || r._spFach) === kdUbFachFilter)
     : alleStunden;
@@ -2448,37 +2445,49 @@ function kdRenderUbErfassen(alleStunden) {
     !dsPartnerKeys.has(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
   );
 
-  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
-  const selectStyle = (r) => {
-    const k = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
-    const aktK = kdUbAktStunde ? `${kdUbAktStunde.kw}-${kdUbAktStunde.jahr}-${kdUbAktStunde.wochentag}-${kdUbAktStunde.stunde}` : '';
-    return k === aktK
-      ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;'
-      : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
-  };
-
-  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">`;
-  sichtbareStunden.forEach(r => {
-    const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
-    const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
-    const fach = r.fach || r._spFach || '';
-    const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std.` : `${r.stunde}. Std.`;
-    html += `<button onclick="kdUbSetStunde(${r.kalenderwoche},${r.jahr},${r.wochentag},${r.stunde})"
-      style="padding:6px 12px;border-radius:10px;cursor:pointer;font-size:11px;font-weight:600;${selectStyle(r)}">
-      ${wdKurz[r.wochentag]} ${datumStr}<br><span style="font-weight:400;">${fach} ${stdLabel}</span>
-    </button>`;
-  });
-  html += `</div>`;
-
-  if (!kdUbAktStunde) {
-    html += `<div style="text-align:center;padding:30px;color:var(--gray-400);">Wähle eine Stunde aus.</div>`;
-    return html;
+  // Standard: erste Stunde vorauswählen
+  if (!kdUbAktStunde && sichtbareStunden.length > 0) {
+    const first = sichtbareStunden[0];
+    kdUbAktStunde = { kw: first.kalenderwoche, jahr: first.jahr, wochentag: first.wochentag, stunde: first.stunde };
   }
+  const aktKey = kdUbAktStunde
+    ? `${kdUbAktStunde.kw}-${kdUbAktStunde.jahr}-${kdUbAktStunde.wochentag}-${kdUbAktStunde.stunde}`
+    : '';
+
+  const chipStyle = (f) => f === kdUbFachFilter
+    ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;'
+    : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
+
+  let html = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Fach:</span>
+      <button onclick="kdUbSetFach(null)" style="${chipStyle(null)}padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">Alle</button>
+      ${alleFaecher.map(f => `<button onclick="kdUbSetFach('${f.replace(/'/g,"\\'")}')" style="${chipStyle(f)}padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">${f}</button>`).join('')}
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Unterrichtsstunde wählen:</label>
+      ${sichtbareStunden.length === 0
+        ? `<div style="font-size:13px;color:var(--gray-400);padding:8px 0;">Keine Stunden für dieses Fach gefunden.</div>`
+        : `<select onchange="(function(v){const p=v.split('-');kdUbSetStunde(+p[0],+p[1],+p[2],+p[3]);})(this.value)"
+            style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--gray-200);font-size:13px;background:white;cursor:pointer;width:100%;max-width:400px;">
+            ${sichtbareStunden.map(r => {
+              const rKey = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+              const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+              const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+              const fachLabel = (r.fach||r._spFach) ? ` · ${r.fach||r._spFach}` : '';
+              const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std. (Doppelstunde)` : `${r.stunde}. Std.`;
+              const istZukunft = datum > heuteEnde;
+              return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${stdLabel}${fachLabel}${istZukunft?' 📅':''}</option>`;
+            }).join('')}
+          </select>`
+      }
+    </div>`;
 
   if (kdSchueler.length === 0) {
-    html += `<div style="text-align:center;padding:30px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
-    return html;
+    return html + `<div style="text-align:center;padding:30px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
   }
+
+  if (!kdUbAktStunde) return html;
 
   const { kw, jahr, wochentag, stunde } = kdUbAktStunde;
   const ubMap = {};
@@ -2486,37 +2495,46 @@ function kdRenderUbErfassen(alleStunden) {
     .forEach(r => { ubMap[r.schueler_id] = r.status; });
 
   const statCfg = {
-    gut:      { label:'👍 Gut',     bg:'#dcfce7', color:'#166534', border:'#86efac' },
-    schlecht: { label:'👎 Schlecht',bg:'#fee2e2', color:'#991b1b', border:'#fca5a5' },
-    neutral:  { label:'➖ Neutral', bg:'#f3f4f6', color:'#374151', border:'#d1d5db' },
+    gut:      { label:'👍 Gute Mitarbeit',     bg:'#dcfce7', color:'#166534', border:'#86efac' },
+    schlecht: { label:'👎 Schlechte Mitarbeit', bg:'#fee2e2', color:'#991b1b', border:'#fca5a5' },
+    neutral:  { label:'➖ Neutral',             bg:'#f3f4f6', color:'#374151', border:'#d1d5db' },
   };
 
-  // Zusammenfassung
   const counts = { gut:0, schlecht:0, neutral:0 };
   kdSchueler.forEach(s => { if (ubMap[s.id]) counts[ubMap[s.id]]++; });
-  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-    <span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;">👍 ${counts.gut}</span>
-    <span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;">👎 ${counts.schlecht}</span>
-    <span style="background:#f3f4f6;color:#374151;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;">➖ ${counts.neutral}</span>
-    <span style="color:var(--gray-400);font-size:12px;align-self:center;">${kdSchueler.length - counts.gut - counts.schlecht - counts.neutral} nicht erfasst</span>
-  </div>`;
+  const nichtErfasst = kdSchueler.length - counts.gut - counts.schlecht - counts.neutral;
 
-  html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
-  kdSchueler.forEach(s => {
+  html += `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span style="background:#dcfce7;color:#166534;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">👍 ${counts.gut}</span>
+      <span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">👎 ${counts.schlecht}</span>
+      <span style="background:#f3f4f6;color:#374151;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">➖ ${counts.neutral}</span>
+      ${nichtErfasst > 0 ? `<span style="background:var(--gray-100);color:var(--gray-400);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">– ${nichtErfasst} nicht erfasst</span>` : ''}
+    </div>
+    <div style="background:white;border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;">`;
+
+  kdSchueler.forEach((s, idx) => {
     const status = ubMap[s.id] || null;
     const cfg = status ? statCfg[status] : null;
-    const btnStyle = cfg
-      ? `background:${cfg.bg};color:${cfg.color};border:2px solid ${cfg.border};`
-      : 'background:var(--white);color:var(--gray-400);border:2px solid var(--gray-200);';
-    const label = cfg ? cfg.label : '— Nicht erfasst';
-    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--white);border:1px solid var(--gray-100);border-radius:10px;">
-      <span style="font-size:13px;font-weight:600;color:var(--gray-800);">${s.nachname}, ${s.vorname}</span>
-      <button onclick="kdUbToggle('${s.id}')" style="${btnStyle}padding:4px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-        ${label}
-      </button>
-    </div>`;
+    const borderTop = idx > 0 ? 'border-top:1px solid var(--gray-100);' : '';
+    const btnBg = cfg ? cfg.bg : 'var(--white)';
+    const btnColor = cfg ? cfg.color : 'var(--gray-400)';
+    const btnBorder = cfg ? cfg.border : 'var(--gray-200)';
+    const btnLabel = cfg ? cfg.label : '— Nicht erfasst';
+    html += `
+      <div style="display:flex;align-items:center;padding:10px 14px;${borderTop}gap:12px;">
+        <div style="flex:1;font-size:13px;font-weight:600;color:var(--gray-800);">${s.nachname}, ${s.vorname}</div>
+        <button onclick="kdUbToggle('${s.id}')"
+          style="background:${btnBg};color:${btnColor};border:1.5px solid ${btnBorder};padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:160px;text-align:center;">
+          ${btnLabel}
+        </button>
+      </div>`;
   });
-  html += `</div>`;
+
+  html += `</div>
+    <div style="margin-top:10px;font-size:11px;color:var(--gray-400);text-align:center;">
+      Tippe auf den Status um ihn zu ändern: Nicht erfasst → 👍 Gut → 👎 Schlecht → ➖ Neutral → Nicht erfasst
+    </div>`;
   return html;
 }
 
