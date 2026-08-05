@@ -1914,10 +1914,10 @@ function kdRenderAnwUebersicht(vergangenStunden) {
     verspaetet:   { text:'V', bg:'#ede9fe', color:'#5b21b6', title:'Verspätet' },
   };
 
-  // Zusammenfassung pro Schüler – nur für bereits stattgefundene Stunden (inkl. DS-Partner)
+  // Zusammenfassung pro Schüler – Counts aus allen Stunden (auch zukünftige), Prozent nur aus vergangenen
   const sum = {};
   kdSchueler.forEach(s => { sum[s.id] = { fehlend:0, entschuldigt:0, verspaetet:0 }; });
-  vergangeneGefiltert.forEach(r => {
+  gefiltert.forEach(r => {
     kdSchueler.forEach(s => {
       const key = `${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
       const status = anwLookup[key];
