@@ -2563,9 +2563,11 @@ function renderStundenplan() {
       const isDSEnd = spIstDoppelstundeEnde(tag, stunde);
       const dsBadge = isDS
         ? `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
-        : isDSEnd ? `<div style="margin-top:3px;text-align:center;font-size:9px;color:#9ca3af;font-style:italic;">↑ Doppelstunde</div>`
+        : isDSEnd ? `<button onclick="spToggleDoppelstunde(${tag},${stunde-1})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
         : `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Als Doppelstunde markieren (mit nächster Stunde)" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:1px dashed #d1d5db;background:transparent;color:#9ca3af;font-size:9px;cursor:pointer;">+ 2h</button>`;
-      html += `<td style="${lzStyle}${cellBg}${isDS ? 'border-bottom:2px solid #f59e0b !important;' : ''}${isDSEnd ? 'border-top:2px solid #f59e0b;' : ''}">
+      const dsBorderTop    = isDS    ? 'border-top:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
+      const dsBorderBottom = isDSEnd ? 'border-bottom:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
+      html += `<td style="${lzStyle}${cellBg}${dsBorderTop}${dsBorderBottom}">
         <div class="sp-cell${isFrei ? ' sp-cell-frei' : ''}" data-tag="${tag}" data-st="${stunde}">
           ${faecherField}
           <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
