@@ -1117,23 +1117,81 @@ async function kdLadeCheckliste() {
 }
 
 // ── Unterricht-Tab ──────────────────────────────────────────────
-async function kdLadeUnterricht() {
-  const { data } = await sb.from('unterrichtsplanung')
-    .select('*')
-    .eq('klasse_id', kdAktiveKlasseId);
-  kdUnterricht = (data || []).sort((a, b) => {
-    const dA = kdDatumAusKW(a.kalenderwoche, a.jahr, a.wochentag);
-    const dB = kdDatumAusKW(b.kalenderwoche, b.jahr, b.wochentag);
-    if (dB - dA !== 0) return dB - dA;          // neueste zuerst
-    return a.stunde - b.stunde;                   // dann nach Stunde
-  });
-}
-
 function kdDatumAusKW(kw, jahr, wochentag) {
   const monday = getMondayOfWeek(kw, jahr);
   const d = new Date(monday);
   d.setUTCDate(d.getUTCDate() + wochentag - 1);
   return d;
+}
+
+async function kdLadeUnterricht() {
+  const heute = new Date();
+
+  // 1. SP-Versionen + Planung parallel laden
+  const [{ data: versionen }, { data: planRows }] = await Promise.all([
+    sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
+    sb.from('unterrichtsplanung').select('*').eq('klasse_id', kdAktiveKlasseId),
+  ]);
+
+  // Schneller Lookup: "kw-jahr-wd-std" → planRow
+  const planIdx = {};
+  (planRows || []).forEach(r => {
+    planIdx[`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`] = r;
+  });
+
+  kdUnterricht = [];
+
+  for (const version of (versionen || [])) {
+    if (!version.gueltig_ab) continue;
+
+    // SP-Slots dieser Klasse in dieser Version
+    const { data: spSlots } = await sb.from('stundenplan')
+      .select('wochentag,stunde,fach')
+      .eq('version_id', version.id)
+      .eq('klasse_id', kdAktiveKlasseId);
+    if (!spSlots || spSlots.length === 0) continue;
+
+    const start = new Date(version.gueltig_ab + 'T12:00:00');
+    const end   = version.gueltig_bis
+      ? new Date(version.gueltig_bis + 'T12:00:00')
+      : heute;
+    const bis   = end > heute ? heute : end;
+
+    const { kw: sKW, jahr: sJahr } = getISOWeek(start);
+    const { kw: eKW, jahr: eJahr } = getISOWeek(bis);
+
+    let curKW = sKW, curJahr = sJahr;
+    while (curJahr * 100 + curKW <= eJahr * 100 + eKW) {
+      for (const sp of spSlots) {
+        const rKey = `${curKW}-${curJahr}-${sp.wochentag}-${sp.stunde}`;
+        const plan = planIdx[rKey] || {};
+        kdUnterricht.push({
+          _key: rKey,
+          id: plan.id || null,
+          kalenderwoche: curKW,
+          jahr: curJahr,
+          wochentag: sp.wochentag,
+          stunde: sp.stunde,
+          fach: plan.fach !== undefined ? plan.fach : (sp.fach || ''),
+          inhalt: plan.inhalt || '',
+          hausaufgaben: plan.hausaufgaben || '',
+          notiz: plan.notiz || '',
+          _spFach: sp.fach || '',
+        });
+      }
+      curKW++;
+      const maxKW = getISOWeek(new Date(curJahr, 11, 28)).kw;
+      if (curKW > maxKW) { curKW = 1; curJahr++; }
+    }
+  }
+
+  // Absteigend nach Datum, dann aufsteigend nach Wochentag & Stunde
+  kdUnterricht.sort((a, b) => {
+    if (b.jahr !== a.jahr) return b.jahr - a.jahr;
+    if (b.kalenderwoche !== a.kalenderwoche) return b.kalenderwoche - a.kalenderwoche;
+    if (a.wochentag !== b.wochentag) return a.wochentag - b.wochentag;
+    return a.stunde - b.stunde;
+  });
 }
 
 function kdRenderUnterricht() {
@@ -1144,16 +1202,15 @@ function kdRenderUnterricht() {
     container.innerHTML = `
       <div style="text-align:center;padding:60px 20px;color:var(--gray-400);">
         <div style="font-size:2.5rem;margin-bottom:12px;">📚</div>
-        <div style="font-size:1rem;font-weight:600;margin-bottom:6px;color:var(--gray-600);">Noch keine Unterrichtsstunden</div>
-        <div style="font-size:0.85rem;line-height:1.5;">Trage in der Unterrichtsplanung Stunden mit dieser Klasse ein –<br>sie erscheinen hier automatisch.</div>
+        <div style="font-size:1rem;font-weight:600;margin-bottom:6px;color:var(--gray-600);">Keine Stunden gefunden</div>
+        <div style="font-size:0.85rem;line-height:1.6;">Weise dieser Klasse im Stundenplan Stunden zu –<br>sie erscheinen dann hier automatisch.</div>
       </div>`;
     return;
   }
 
-  const wochentage = ['', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
-  const wdKurz     = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr'];
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
 
-  // Nach KW+Jahr gruppieren (absteigend)
+  // Nach KW+Jahr gruppieren
   const gruppen = {};
   kdUnterricht.forEach(r => {
     const key = `${r.jahr}-${String(r.kalenderwoche).padStart(2,'0')}`;
@@ -1162,7 +1219,31 @@ function kdRenderUnterricht() {
   });
   const gruppenKeys = Object.keys(gruppen).sort().reverse();
 
-  let html = `<div style="display:flex;flex-direction:column;gap:16px;">`;
+  // Gesamtzahl
+  const gesamt = kdUnterricht.length;
+  const mitInhalt = kdUnterricht.filter(r => r.inhalt).length;
+
+  let html = `
+    <!-- Zusammenfassung -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
+        <span style="font-size:22px;font-weight:700;color:var(--gray-800);">${gesamt}</span>
+        <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Stunden gesamt</span>
+      </div>
+      <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
+        <span style="font-size:22px;font-weight:700;color:#16a34a;">${mitInhalt}</span>
+        <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Mit Inhalt</span>
+      </div>
+      <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
+        <span style="font-size:22px;font-weight:700;color:var(--gray-400);">${gesamt - mitInhalt}</span>
+        <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Offen</span>
+      </div>
+      <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
+        <span style="font-size:22px;font-weight:700;color:var(--gray-800);">${gruppenKeys.length}</span>
+        <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Kalenderwochen</span>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;">`;
 
   gruppenKeys.forEach(key => {
     const g = gruppen[key];
@@ -1170,72 +1251,80 @@ function kdRenderUnterricht() {
     const friday = new Date(monday); friday.setUTCDate(monday.getUTCDate() + 4);
     const vonStr = monday.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', timeZone:'UTC'});
     const bisStr = friday.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC'});
+    const stundenMitInhalt = g.zeilen.filter(r => r.inhalt).length;
 
     html += `
-    <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.05);">
-      <!-- Woche-Header -->
-      <div style="background:var(--gray-800);color:white;padding:10px 16px;display:flex;align-items:center;gap:12px;">
-        <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;opacity:0.6;text-transform:uppercase;">KW ${g.kw}</span>
-        <span style="font-size:13px;font-weight:600;">${vonStr} – ${bisStr}</span>
+    <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.04);">
+
+      <!-- KW-Header -->
+      <div style="background:var(--gray-800);color:white;padding:11px 16px;display:flex;align-items:center;gap:0;justify-content:space-between;">
+        <div style="display:flex;align-items:baseline;gap:10px;">
+          <span style="font-size:18px;font-weight:800;letter-spacing:-0.02em;">KW ${g.kw}</span>
+          <span style="font-size:13px;font-weight:500;opacity:0.7;">${vonStr} – ${bisStr}</span>
+        </div>
+        <span style="font-size:11px;font-weight:600;opacity:0.55;">${stundenMitInhalt}/${g.zeilen.length} Std.</span>
       </div>
+
       <!-- Zeilen -->
-      <div style="display:flex;flex-direction:column;">`;
+      <div>`;
 
     g.zeilen.forEach((r, idx) => {
       const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
-      const datumStr = datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC'});
-      const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50)';
+      const datumStr = datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', timeZone:'UTC'});
+      const rowBg = idx % 2 === 0 ? 'var(--white)' : '#fafafa';
       const hasContent = r.inhalt || r.hausaufgaben || r.notiz;
+      const borderTop = idx > 0 ? 'border-top:1px solid var(--gray-100);' : '';
 
       html += `
-        <div style="display:grid;grid-template-columns:auto auto 1fr;gap:0;border-top:${idx>0?'1px solid var(--gray-100)':'none'};">
+      <div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;${borderTop}">
 
-          <!-- Linke Info-Spalte -->
-          <div style="padding:12px 14px;background:${rowBg};border-right:1px solid var(--gray-100);min-width:110px;display:flex;flex-direction:column;justify-content:center;gap:2px;">
-            <div style="font-size:12px;font-weight:700;color:var(--gray-800);">${wdKurz[r.wochentag]}, ${datumStr}</div>
-            <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
-              <span style="background:var(--gray-100);color:var(--gray-600);font-size:11px;font-weight:600;padding:1px 7px;border-radius:20px;white-space:nowrap;">${r.stunde}. Std.</span>
-              ${r.fach ? `<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:1px 7px;border-radius:20px;white-space:nowrap;">${r.fach}</span>` : ''}
-            </div>
+        <!-- Tag/Std/Fach -->
+        <div style="padding:12px 14px;background:${rowBg};border-right:2px solid var(--gray-100);display:flex;flex-direction:column;justify-content:center;gap:4px;">
+          <div style="font-size:13px;font-weight:700;color:var(--gray-800);">${wdKurz[r.wochentag]}, ${datumStr}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            <span style="background:var(--gray-100);color:var(--gray-600);font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;">${r.stunde}. Std.</span>
+            ${(r.fach||r._spFach) ? `<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;">${r.fach||r._spFach}</span>` : ''}
           </div>
+          ${!hasContent ? '<div style="font-size:10px;color:var(--gray-300);margin-top:2px;">Kein Eintrag</div>' : ''}
+        </div>
 
-          <!-- Inhalt (breit) -->
-          <div style="padding:12px 14px;background:${rowBg};border-right:1px solid var(--gray-100);min-width:160px;flex:1;">
-            <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Inhalt</div>
-            <div contenteditable="true"
-              data-uid="${r.id}" data-feld="inhalt"
-              style="font-size:13px;color:var(--gray-800);min-height:20px;outline:none;border-radius:6px;padding:2px 4px;transition:background 0.15s;"
-              onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'"
-              onfocus="this.style.background='#eff6ff';this.style.outline='2px solid #bfdbfe'"
-              onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
-              >${r.inhalt || '<span style=\"color:var(--gray-300);font-size:12px;\">Klicken zum Bearbeiten…</span>'}</div>
-          </div>
+        <!-- Inhalt -->
+        <div style="padding:10px 12px;background:${rowBg};border-right:1px solid var(--gray-100);">
+          <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Inhalt</div>
+          <div contenteditable="true"
+            data-rkey="${r._key}" data-feld="inhalt"
+            style="font-size:13px;color:var(--gray-800);min-height:22px;outline:none;border-radius:6px;padding:3px 5px;transition:background 0.12s;word-break:break-word;"
+            onmouseenter="this.style.background='#f0f9ff'" onmouseleave="this.style.background='transparent'"
+            onfocus="this.style.background='#eff6ff';this.style.outline='2px solid #bfdbfe'"
+            onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
+          >${r.inhalt || ''}</div>
+        </div>
 
-          <!-- HA + Notiz gestapelt -->
-          <div style="display:flex;flex-direction:column;background:${rowBg};">
-            <div style="padding:8px 14px;border-bottom:1px solid var(--gray-100);flex:1;">
-              <div style="font-size:10px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">📝 Hausaufgaben</div>
-              <div contenteditable="true"
-                data-uid="${r.id}" data-feld="hausaufgaben"
-                style="font-size:13px;color:var(--gray-800);min-height:18px;outline:none;border-radius:6px;padding:2px 4px;transition:background 0.15s;"
-                onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'"
-                onfocus="this.style.background='#fffbeb';this.style.outline='2px solid #fde68a'"
-                onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
-                >${r.hausaufgaben || '<span style=\"color:var(--gray-300);font-size:12px;\">–</span>'}</div>
-            </div>
-            <div style="padding:8px 14px;flex:1;">
-              <div style="font-size:10px;font-weight:700;color:#8b5cf6;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">💬 Notiz</div>
-              <div contenteditable="true"
-                data-uid="${r.id}" data-feld="notiz"
-                style="font-size:13px;color:var(--gray-800);min-height:18px;outline:none;border-radius:6px;padding:2px 4px;transition:background 0.15s;"
-                onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'"
-                onfocus="this.style.background='#f5f3ff';this.style.outline='2px solid #ddd6fe'"
-                onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
-                >${r.notiz || '<span style=\"color:var(--gray-300);font-size:12px;\">–</span>'}</div>
-            </div>
-          </div>
+        <!-- Hausaufgaben -->
+        <div style="padding:10px 12px;background:${rowBg};border-right:1px solid var(--gray-100);">
+          <div style="font-size:10px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Hausaufgaben</div>
+          <div contenteditable="true"
+            data-rkey="${r._key}" data-feld="hausaufgaben"
+            style="font-size:13px;color:var(--gray-800);min-height:22px;outline:none;border-radius:6px;padding:3px 5px;transition:background 0.12s;word-break:break-word;"
+            onmouseenter="this.style.background='#fffdf0'" onmouseleave="this.style.background='transparent'"
+            onfocus="this.style.background='#fffbeb';this.style.outline='2px solid #fde68a'"
+            onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
+          >${r.hausaufgaben || ''}</div>
+        </div>
 
-        </div>`;
+        <!-- Notiz -->
+        <div style="padding:10px 12px;background:${rowBg};">
+          <div style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Notiz</div>
+          <div contenteditable="true"
+            data-rkey="${r._key}" data-feld="notiz"
+            style="font-size:13px;color:var(--gray-800);min-height:22px;outline:none;border-radius:6px;padding:3px 5px;transition:background 0.12s;word-break:break-word;"
+            onmouseenter="this.style.background='#fdf4ff'" onmouseleave="this.style.background='transparent'"
+            onfocus="this.style.background='#f5f3ff';this.style.outline='2px solid #ddd6fe'"
+            onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
+          >${r.notiz || ''}</div>
+        </div>
+
+      </div>`;
     });
 
     html += `</div></div>`;
@@ -1246,22 +1335,36 @@ function kdRenderUnterricht() {
 }
 
 async function kdSpeichereUnterrichtZelle(el) {
-  // Placeholder-Spans entfernen und reinen Text holen
   const wert = el.innerText.trim();
-  const id = el.dataset.uid;
-  const feld = el.dataset.feld;
+  const rkey = el.dataset.rkey;
+  const feld  = el.dataset.feld;
+  const row   = kdUnterricht.find(r => r._key === rkey);
+  if (!row) return;
 
-  // Lokale Daten aktualisieren
-  const row = kdUnterricht.find(r => String(r.id) === String(id));
-  if (row) row[feld] = wert;
+  row[feld] = wert;
 
-  const { error } = await sb.from('unterrichtsplanung').update({ [feld]: wert }).eq('id', id);
+  const upsertData = {
+    wochentag: row.wochentag,
+    stunde: row.stunde,
+    kalenderwoche: row.kalenderwoche,
+    jahr: row.jahr,
+    klasse_id: kdAktiveKlasseId,
+    fach: row.fach || null,
+    inhalt: row.inhalt || '',
+    hausaufgaben: row.hausaufgaben || '',
+    notiz: row.notiz || '',
+  };
 
-  // Kurzes visuelles Feedback
+  const { data: saved, error } = await sb.from('unterrichtsplanung')
+    .upsert(upsertData, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' })
+    .select().single();
+
+  if (!error && saved) row.id = saved.id;
+
   if (!error) {
     el.style.background = '#dcfce7';
     el.style.outline = '2px solid #86efac';
-    setTimeout(() => { el.style.background = 'transparent'; el.style.outline = 'none'; }, 800);
+    setTimeout(() => { el.style.background = 'transparent'; el.style.outline = 'none'; }, 700);
   }
 }
 
