@@ -2995,9 +2995,11 @@ function kdRenderNotenEingabe() {
   const schluesselListe = kdNotenSchluesselListe();
 
   let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <div style="font-size:13px;font-weight:700;color:var(--gray-600);">${bearbeiteterEintrag ? '✏️ Noteneintrag bearbeiten' : '➕ Neuer Noteneintrag'} · ${kdNotenFach}</div>
+    <div style="font-size:13px;font-weight:700;color:var(--gray-600);">${bearbeiteterEintrag ? '✏️ Noteneintrag bearbeiten' : '➕ Neuer Noteneintrag'}</div>
     <button onclick="kdNotenMaskeSchliessen()" style="background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:12px;">✖ Schließen</button>
   </div>`;
+
+  html += `<div style="margin-bottom:14px;">${kdRenderNotenFachChips(faecher)}</div>`;
 
   html += `<div style="margin-bottom:14px;">
     <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Hauptkategorie:</label>
@@ -3098,11 +3100,11 @@ function kdRenderNotenEingabe() {
 }
 
 function kdRenderNotenListe() {
-  if (kdNotenEintraege.length === 0) {
-    return `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:13px;">Noch keine Noten eingetragen.</div>`;
+  const eintraegeFach = kdNotenEintraege.filter(e => e.fach === kdNotenFach);
+  if (eintraegeFach.length === 0) {
+    return `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:13px;">Noch keine Noten für ${kdNotenFach} eingetragen.</div>`;
   }
-  const sortiert = [...kdNotenEintraege].sort((a, b) => {
-    if (a.fach !== b.fach) return a.fach.localeCompare(b.fach, 'de');
+  const sortiert = [...eintraegeFach].sort((a, b) => {
     if (a.hauptkategorie !== b.hauptkategorie) return a.hauptkategorie.localeCompare(b.hauptkategorie, 'de');
     const ua = a.unterkategorie || '', ub = b.unterkategorie || '';
     if (ua !== ub) return ua.localeCompare(ub, 'de');
@@ -3112,7 +3114,7 @@ function kdRenderNotenListe() {
   let html = '<div>';
   let letzteGruppe = null;
   sortiert.forEach(e => {
-    const gruppe = `${e.fach} · ${e.hauptkategorie}${e.unterkategorie ? ' · ' + e.unterkategorie : ''}`;
+    const gruppe = `${e.hauptkategorie}${e.unterkategorie ? ' · ' + e.unterkategorie : ''}`;
     if (gruppe !== letzteGruppe) {
       html += `<div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.03em;margin:${letzteGruppe ? '18px' : '0'} 0 6px;">${gruppe}</div>`;
       letzteGruppe = gruppe;
