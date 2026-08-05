@@ -1684,7 +1684,7 @@ function kdRenderAnwesenheit() {
 
   html += kdAnwAnsicht === 'erfassen'
     ? kdRenderAnwErfassen(vergangenStunden)
-    : kdRenderAnwUebersicht(vergangenFuerUebersicht);
+    : kdRenderAnwUebersicht(vergangenStunden);
 
   container.innerHTML = html;
 }
@@ -1834,7 +1834,7 @@ function kdRenderAnwUebersicht(vergangenStunden) {
     : vergangenStunden;
 
   if (gefiltert.length === 0) {
-    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Noch keine vergangenen Stunden vorhanden.</div>`;
+    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für dieses Fach gefunden.</div>`;
   }
 
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
