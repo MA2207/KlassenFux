@@ -3214,6 +3214,8 @@ async function kdNotenEintragSpeichern() {
 }
 
 // Modal: Kategorien verwalten
+let kdNotenKatEditId = null;
+
 function kdNotenKatVerwalten() {
   document.getElementById('kd-noten-kat-modal')?.remove();
   const el = document.createElement('div');
@@ -3222,10 +3224,24 @@ function kdNotenKatVerwalten() {
   const muendlich = kdNotenKat.filter(k => k.hauptkat === 'muendlich');
   const schriftlich = kdNotenKat.filter(k => k.hauptkat === 'schriftlich');
   const rl = (list) => list.length === 0 ? '<div style="font-size:12px;color:var(--gray-300);padding:4px 0;">Keine Kategorien</div>' :
-    list.map(k => `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+    list.map(k => {
+      if (kdNotenKatEditId === k.id) {
+        return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;">
+          <input id="kd-kat-edit-name" value="${k.name.replace(/"/g,'&quot;')}" style="flex:1;padding:6px 8px;border:1.5px solid #1d4ed8;border-radius:6px;font-size:13px;">
+          <select id="kd-kat-edit-hauptkat" style="padding:6px;border:1.5px solid var(--gray-200);border-radius:6px;font-size:12px;">
+            <option value="muendlich" ${k.hauptkat==='muendlich'?'selected':''}>🗣 Mündlich</option>
+            <option value="schriftlich" ${k.hauptkat==='schriftlich'?'selected':''}>✏️ Schriftlich</option>
+          </select>
+          <button onclick="kdNotenKatBearbeitenSpeichern('${k.id}')" style="background:#dcfce7;border:none;color:#15803d;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:6px;">✓</button>
+          <button onclick="kdNotenKatEditId=null;kdNotenKatVerwalten();" style="background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:13px;padding:6px 8px;">✕</button>
+        </div>`;
+      }
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
       <span style="flex:1;font-size:13px;">${k.name}</span>
+      <button onclick="kdNotenKatEditId='${k.id}';kdNotenKatVerwalten();" style="background:none;border:none;color:var(--gray-300);cursor:pointer;font-size:13px;">✏️</button>
       <button onclick="kdNotenKatLoeschen('${k.id}')" style="background:none;border:none;color:var(--gray-300);cursor:pointer;font-size:14px;">🗑</button>
-    </div>`).join('');
+    </div>`;
+    }).join('');
   el.innerHTML = `
     <div style="background:white;border-radius:16px;padding:24px;width:90%;max-width:440px;max-height:90vh;overflow-y:auto;">
       <h3 style="margin:0 0 16px;font-size:16px;color:var(--gray-800);">Kategorien verwalten</h3>
@@ -3239,7 +3255,7 @@ function kdNotenKatVerwalten() {
           <button onclick="kdNotenKatSpeichern('schriftlich')" style="flex:1;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:#fef3c7;color:#92400e;">+ Schriftlich</button>
         </div>
       </div>
-      <button onclick="document.getElementById('kd-noten-kat-modal').remove();kdRenderNoten();" style="width:100%;margin-top:16px;padding:10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:white;color:var(--gray-600);">Schließen</button>
+      <button onclick="kdNotenKatEditId=null;document.getElementById('kd-noten-kat-modal').remove();kdRenderNoten();" style="width:100%;margin-top:16px;padding:10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:white;color:var(--gray-600);">Schließen</button>
     </div>`;
   document.body.appendChild(el);
 }
@@ -3248,6 +3264,16 @@ async function kdNotenKatSpeichern(hauptkat) {
   const name = document.getElementById('kd-kat-name')?.value.trim();
   if (!name) return;
   await sb.from('noten_kategorien').insert({ klasse_id: kdAktiveKlasseId, hauptkat, name });
+  await kdLadeNoten();
+  kdNotenKatVerwalten();
+}
+
+async function kdNotenKatBearbeitenSpeichern(id) {
+  const name = document.getElementById('kd-kat-edit-name')?.value.trim();
+  const hauptkat = document.getElementById('kd-kat-edit-hauptkat')?.value;
+  if (!name) return;
+  await sb.from('noten_kategorien').update({ name, hauptkat }).eq('id', id);
+  kdNotenKatEditId = null;
   await kdLadeNoten();
   kdNotenKatVerwalten();
 }
