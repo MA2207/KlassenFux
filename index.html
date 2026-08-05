@@ -473,14 +473,6 @@
         <span class="module-badge badge-active">✓ Verfügbar</span>
       </div>
 
-      <!-- Notenverwaltung – in Bearbeitung -->
-      <div class="module-card inactive">
-        <div class="module-icon">📝</div>
-        <div class="module-title">Notenverwaltung</div>
-        <div class="module-desc">Noten erfassen, berechnen und Notenübersichten für alle Klassen erstellen.</div>
-        <span class="module-badge badge-wip">⏳ In Bearbeitung</span>
-      </div>
-
       <!-- Einstellungen – aktiv -->
       <div class="module-card active" onclick="showPage('einstellungen')">
         <div class="module-icon">⚙️</div>
@@ -731,6 +723,25 @@
     <!-- Notenverwaltung -->
     <div class="settings-section">
       <div class="settings-section-title">Notenverwaltung</div>
+
+      <div style="margin-bottom:20px;">
+        <div style="font-size:0.85rem;font-weight:700;color:var(--gray-700);margin-bottom:6px;">Gewichtung Mündlich / Schriftlich</div>
+        <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 10px;">
+          Bestimmt, wie stark mündliche und schriftliche Noten in den gewichteten Gesamtdurchschnitt (Notenübersicht) einfließen.
+        </p>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:0.8rem;color:#1e40af;font-weight:600;">🗣 Mündlich</span>
+            <input type="number" min="0" max="100" id="set-gewicht-muendlich" oninput="kdGewichtungSync('muendlich'); autoSave();" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> %
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:0.8rem;color:#92400e;font-weight:600;">✏️ Schriftlich</span>
+            <input type="number" min="0" max="100" id="set-gewicht-schriftlich" oninput="kdGewichtungSync('schriftlich'); autoSave();" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> %
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size:0.85rem;font-weight:700;color:var(--gray-700);margin-bottom:6px;">Notenschlüssel</div>
       <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">
         Lege fest, welchem Dezimalwert eine Note entspricht und ab welchem Prozentsatz sie im Punkte-Modus vergeben wird (z.B. 4- ab 39%).
       </p>
@@ -1141,6 +1152,8 @@ const KD_NOTENSCHLUESSEL_DEFAULT = {
 };
 let KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT };
 let KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT };
+const KD_NOTENGEWICHTUNG_DEFAULT = { muendlich: 50, schriftlich: 50 };
+let KD_NOTENGEWICHTUNG = { ...KD_NOTENGEWICHTUNG_DEFAULT };
 let kdAnwUebHjFilter = null;  // null=Alle, 1=1.HJ, 2=2.HJ
 let kdHaUebHjFilter  = null;
 let kdUbUebHjFilter  = null;
@@ -2794,6 +2807,30 @@ async function kdLadeNotenEinstellungen() {
   const saved = data?.daten || {};
   KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT, ...(saved.notenwerte || {}) };
   KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT, ...(saved.notenschluessel || {}) };
+  KD_NOTENGEWICHTUNG = { ...KD_NOTENGEWICHTUNG_DEFAULT, ...(saved.notengewichtung || {}) };
+}
+
+// Gewichteter Gesamtdurchschnitt aus mündlichen/schriftlichen Einzelwerten
+function kdGewichteterDurchschnitt(werte, eintraege) {
+  const wM = [], wS = [], sonst = [];
+  eintraege.forEach((e, i) => {
+    const wert = werte[i];
+    if (wert === null || wert === undefined) return;
+    const kat = kdNotenKat.find(k => k.id === e.kategorie_id);
+    if (kat?.hauptkat === 'muendlich') wM.push(wert);
+    else if (kat?.hauptkat === 'schriftlich') wS.push(wert);
+    else sonst.push(wert);
+  });
+  const avgM = wM.length ? wM.reduce((a,b)=>a+b,0)/wM.length : null;
+  const avgS = wS.length ? wS.reduce((a,b)=>a+b,0)/wS.length : null;
+  if (avgM === null && avgS === null) {
+    return sonst.length ? sonst.reduce((a,b)=>a+b,0)/sonst.length : null;
+  }
+  if (avgM === null) return avgS;
+  if (avgS === null) return avgM;
+  const gm = KD_NOTENGEWICHTUNG.muendlich ?? 50, gs = KD_NOTENGEWICHTUNG.schriftlich ?? 50;
+  const summe = (gm + gs) || 1;
+  return (avgM * gm + avgS * gs) / summe;
 }
 
 function kdNoteZeichen(wert) {
@@ -3061,7 +3098,7 @@ function kdRenderNotenUebersicht() {
           ${e.ist_punkte_eintrag?`<div style="opacity:0.6;font-size:9px;">${e.gesamtpunktzahl}Pkt</div>`:`<div style="opacity:0.6;font-size:9px;">${kat?.name||''}</div>`}
         </th>`;
       }).join('')}
-      <th style="background:#166534;color:white;padding:5px 10px;font-size:10px;text-align:center;min-width:48px;">Ø</th>
+      <th style="background:#166534;color:white;padding:5px 10px;font-size:10px;text-align:center;min-width:48px;" title="${kdNotenHauptkat ? 'Durchschnitt dieser Kategorie' : `Gewichtet: ${KD_NOTENGEWICHTUNG.muendlich ?? 50}% mündlich / ${KD_NOTENGEWICHTUNG.schriftlich ?? 50}% schriftlich`}">Ø${kdNotenHauptkat ? '' : ' *'}</th>
     </tr></thead>
     <tbody>`;
 
@@ -3072,7 +3109,9 @@ function kdRenderNotenUebersicht() {
       return n ? n.wert : null;
     });
     const vorh = werte.filter(v => v !== null);
-    const sch = vorh.length > 0 ? vorh.reduce((a,b)=>a+b,0)/vorh.length : null;
+    const sch = kdNotenHauptkat
+      ? (vorh.length > 0 ? vorh.reduce((a,b)=>a+b,0)/vorh.length : null)
+      : kdGewichteterDurchschnitt(werte, eintraege);
     const schF = sch !== null ? kdNoteFarbe(sch) : null;
 
     html += `<tr>
@@ -3109,11 +3148,23 @@ function kdRenderNotenUebersicht() {
       </td>`;
     }).join('')}
     <td style="text-align:center;border-bottom:1px solid rgba(255,255,255,0.1);">
-      ${(()=>{ const all=kdSchueler.flatMap(s=>eintraege.map(e=>{const n=kdNotenDaten.find(n=>n.schueler_id===s.id&&n.noteneintrag_id===e.id);return n?n.wert:null;}).filter(v=>v!==null)); const a=all.length>0?all.reduce((x,y)=>x+y,0)/all.length:null; return a!==null?`<span style="color:white;font-size:11px;font-weight:700;">${a.toFixed(2)}</span>`:'<span style="color:rgba(255,255,255,0.3);">–</span>'; })()}
+      ${(()=>{
+        const proSchueler = kdSchueler.map(s => {
+          const werte = eintraege.map(e => { const n=kdNotenDaten.find(n=>n.schueler_id===s.id&&n.noteneintrag_id===e.id); return n?n.wert:null; });
+          return kdNotenHauptkat
+            ? (()=>{ const v=werte.filter(w=>w!==null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; })()
+            : kdGewichteterDurchschnitt(werte, eintraege);
+        }).filter(v => v !== null);
+        const a = proSchueler.length ? proSchueler.reduce((x,y)=>x+y,0)/proSchueler.length : null;
+        return a!==null?`<span style="color:white;font-size:11px;font-weight:700;">${a.toFixed(2)}</span>`:'<span style="color:rgba(255,255,255,0.3);">–</span>';
+      })()}
     </td>
   </tr>`;
 
   html += `</tbody></table></div>`;
+  if (!kdNotenHauptkat) {
+    html += `<div style="font-size:10px;color:var(--gray-400);margin-top:6px;">* Gewichtet: ${KD_NOTENGEWICHTUNG.muendlich ?? 50}% mündlich / ${KD_NOTENGEWICHTUNG.schriftlich ?? 50}% schriftlich (einstellbar unter Einstellungen → Notenverwaltung)</div>`;
+  }
   return html;
 }
 
@@ -3808,6 +3859,21 @@ function applyEinstellungen(saved) {
     { ...KD_NOTE_MAP_DEFAULT, ...(saved.notenwerte || {}) },
     { ...KD_NOTENSCHLUESSEL_DEFAULT, ...(saved.notenschluessel || {}) }
   );
+
+  const gewichtung = { ...KD_NOTENGEWICHTUNG_DEFAULT, ...(saved.notengewichtung || {}) };
+  document.getElementById('set-gewicht-muendlich').value = gewichtung.muendlich;
+  document.getElementById('set-gewicht-schriftlich').value = gewichtung.schriftlich;
+}
+
+// Hält die beiden Gewichtungsfelder komplementär (Summe = 100)
+function kdGewichtungSync(geaendert) {
+  const mEl = document.getElementById('set-gewicht-muendlich');
+  const sEl = document.getElementById('set-gewicht-schriftlich');
+  let val = parseFloat((geaendert === 'muendlich' ? mEl : sEl).value);
+  if (isNaN(val)) val = 0;
+  val = Math.max(0, Math.min(100, val));
+  if (geaendert === 'muendlich') { mEl.value = val; sEl.value = 100 - val; }
+  else { sEl.value = val; mEl.value = 100 - val; }
 }
 
 // ── Notenschlüssel-Einstellungen ──
@@ -3875,6 +3941,10 @@ async function saveEinstellungen() {
   })).filter(t => t.bezeichnung || t.datum);
 
   const { dez: notenwerte, min: notenschluessel } = kdNotenwerteAuslesen();
+  const notengewichtung = {
+    muendlich: parseFloat(document.getElementById('set-gewicht-muendlich')?.value) || 0,
+    schriftlich: parseFloat(document.getElementById('set-gewicht-schriftlich')?.value) || 0,
+  };
 
   const daten = {
     lehrername: document.getElementById('set-lehrername').value.trim(),
@@ -3891,10 +3961,12 @@ async function saveEinstellungen() {
     faecher,
     notenwerte,
     notenschluessel,
+    notengewichtung,
   };
   await sb.from('einstellungen').upsert({ id: 1, daten });
   KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT, ...notenwerte };
   KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT, ...notenschluessel };
+  KD_NOTENGEWICHTUNG = { ...KD_NOTENGEWICHTUNG_DEFAULT, ...notengewichtung };
 }
 
 let _autoSaveTimer = null;
