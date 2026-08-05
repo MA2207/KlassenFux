@@ -555,6 +555,7 @@
       <button data-kd-tab="anwesenheit" onclick="kdZeigeUnterseite('anwesenheit')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">👥 Anwesenheit</button>
       <button data-kd-tab="hausaufgaben" onclick="kdZeigeUnterseite('hausaufgaben')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📝 Hausaufgaben</button>
       <button data-kd-tab="beobachtung" onclick="kdZeigeUnterseite('beobachtung')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">🔍 Beobachtung</button>
+      <button data-kd-tab="noten" onclick="kdZeigeUnterseite('noten')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📊 Noten</button>
       <button data-kd-tab="checkliste" onclick="kdZeigeUnterseite('checkliste')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">✅ Checkliste</button>
     </div>
     <div id="kd-content"></div>
@@ -1131,6 +1132,19 @@ let kdUbAktStunde = null;
 let kdUbAnsicht = 'erfassen';
 let kdUbFachFilter = null;
 let kdUbUebFachFilter = null;
+
+// ── Noten ──
+let kdNotenEinst = {};          // geladene Einstellungen (faecher, notenKonfiguration, notenschluessel)
+let kdNotenEintraege = [];      // Noteneinträge dieser Klasse
+let kdNotenWerte = [];          // einzelne Schülerwerte (Tabelle "noten") dieser Klasse
+let kdNotenAnsicht = 'eingabe'; // 'eingabe' | 'uebersicht'
+let kdNotenFach = null;
+let kdNotenHauptkat = null;
+let kdNotenUnterkat = null;
+let kdNotenEingabeart = 'direkt'; // 'direkt' | 'punkte'
+let kdNotenSchluesselIndex = 0;
+let kdNotenAktEintragId = null; // gesetzt = Bearbeitungsmodus
+
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
   // Aktuelle KW suchen, sonst nächste verfügbare
@@ -1167,9 +1181,16 @@ async function kdOeffneKlasse(klasseId) {
   kdUbFachFilter = null;
   kdUbUebFachFilter = null;
   kdUbUebHjFilter = null;
+  kdNotenAnsicht = 'eingabe';
+  kdNotenFach = null;
+  kdNotenHauptkat = null;
+  kdNotenUnterkat = null;
+  kdNotenEingabeart = 'direkt';
+  kdNotenSchluesselIndex = 0;
+  kdNotenAktEintragId = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
-  await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung()]);
+  await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung(), kdLadeNoten()]);
   await kdZeigeUnterseite('unterricht');
   kdScrollZuHeute();
 }
@@ -1188,6 +1209,7 @@ function kdZeigeUnterseite(seite) {
   if (seite === 'anwesenheit') { return kdLadeAnwesenheit().then(() => kdRenderAnwesenheit()); }
   if (seite === 'hausaufgaben') { return kdLadeHausaufgaben().then(() => kdRenderHausaufgaben()); }
   if (seite === 'beobachtung') { return kdLadeBeobachtung().then(() => kdRenderBeobachtung()); }
+  if (seite === 'noten') { return kdLadeNoten().then(() => kdRenderNoten()); }
   return Promise.resolve();
 }
 
@@ -2752,6 +2774,356 @@ function kdRenderUbUebersicht(alleStunden) {
       <span style="color:var(--gray-400);">% = Anteil guter Mitarbeit an stattgefundenen Stunden</span>
     </div>`;
   return html;
+}
+
+// ── NOTEN ────────────────────────────────────────────────────────
+
+async function kdLadeNoten() {
+  const [{ data: einst }, { data: eintraege }] = await Promise.all([
+    sb.from('einstellungen').select('daten').eq('id', 1).single(),
+    sb.from('noteneintraege').select('*').eq('klasse_id', kdAktiveKlasseId).order('datum', { ascending: false }),
+  ]);
+  kdNotenEinst = einst?.daten || {};
+  kdNotenEintraege = eintraege || [];
+  kdNotenWerte = [];
+  if (kdNotenEintraege.length > 0) {
+    const { data: werte } = await sb.from('noten').select('*').in('noteneintrag_id', kdNotenEintraege.map(e => e.id));
+    kdNotenWerte = werte || [];
+  }
+}
+
+function kdNotenFaecher() { return kdNotenEinst.faecher || []; }
+
+function kdNotenHauptkategorien(fach) {
+  return (kdNotenEinst.notenKonfiguration && kdNotenEinst.notenKonfiguration[fach]?.hauptkategorien) || [];
+}
+
+function kdNotenUnterkategorien(fach, hauptkatName) {
+  const hk = kdNotenHauptkategorien(fach).find(h => h.name === hauptkatName);
+  return hk?.unterkategorien || [];
+}
+
+function kdNotenSchluesselListe() {
+  const liste = kdNotenEinst.notenschluessel?.schluessel;
+  return (liste && liste.length) ? liste : Array.from({ length: KD_NOTENSCHLUESSEL_ANZAHL }, (_, i) => kdNotenschluesselDefaultSchema(i));
+}
+
+function kdNotenProzentZuNote(prozent, schluesselIndex) {
+  const schema = kdNotenSchluesselListe()[schluesselIndex] || kdNotenschluesselDefaultSchema(schluesselIndex || 0);
+  for (const code of KD_NOTEN_CODES) {
+    const schwelle = schema.prozentSchwellen?.[code] ?? KD_NOTENSCHLUESSEL_DEFAULT[code];
+    if (prozent >= schwelle) return code;
+  }
+  return KD_NOTEN_CODES[KD_NOTEN_CODES.length - 1];
+}
+
+function kdNotenSetAnsicht(a) { kdNotenAnsicht = a; kdNotenAktEintragId = null; kdRenderNoten(); }
+function kdNotenSetFach(fach) { kdNotenFach = fach || null; kdNotenHauptkat = null; kdNotenUnterkat = null; kdRenderNoten(); }
+function kdNotenSetHauptkat(name) { kdNotenHauptkat = name || null; kdNotenUnterkat = null; kdRenderNoten(); }
+function kdNotenSetUnterkat(name) { kdNotenUnterkat = name || null; kdRenderNoten(); }
+function kdNotenSetEingabeart(art) { kdNotenEingabeart = art; kdRenderNoten(); }
+function kdNotenSetSchluesselIndex(i) { kdNotenSchluesselIndex = parseInt(i) || 0; kdNotenGesamtpunktzahlAktualisieren(); }
+
+function kdNotenZeileAktualisieren(inputEl) {
+  const schuelerId = inputEl.id.replace('ne-punkte-', '');
+  const anzeige = document.querySelector(`.ne-note-anzeige[data-fuer="${schuelerId}"]`);
+  if (!anzeige) return;
+  const gesamt = parseFloat(document.getElementById('ne-gesamtpunktzahl')?.value) || 0;
+  const punkte = parseFloat(inputEl.value);
+  if (isNaN(punkte) || gesamt <= 0) { anzeige.textContent = ''; return; }
+  const prozent = Math.max(0, Math.min(100, (punkte / gesamt) * 100));
+  const note = kdNotenProzentZuNote(prozent, kdNotenSchluesselIndex);
+  anzeige.textContent = `${prozent.toFixed(1)}% → ${note}`;
+}
+
+function kdNotenGesamtpunktzahlAktualisieren() {
+  document.querySelectorAll('[data-ne-punkte]').forEach(inp => kdNotenZeileAktualisieren(inp));
+}
+
+function kdNotenEintragBearbeiten(id) {
+  const eintrag = kdNotenEintraege.find(e => e.id === id);
+  if (!eintrag) return;
+  kdNotenAktEintragId = id;
+  kdNotenFach = eintrag.fach;
+  kdNotenHauptkat = eintrag.hauptkategorie;
+  kdNotenUnterkat = eintrag.unterkategorie || null;
+  kdNotenEingabeart = eintrag.eingabeart;
+  kdNotenSchluesselIndex = eintrag.notenschluessel_index ?? 0;
+  kdNotenAnsicht = 'eingabe';
+  kdRenderNoten();
+}
+
+function kdNotenEintragAbbrechen() {
+  kdNotenAktEintragId = null;
+  kdRenderNoten();
+}
+
+async function kdNotenEintragLoeschen(id) {
+  if (!confirm('Diesen Noteneintrag wirklich löschen?')) return;
+  await sb.from('noteneintraege').delete().eq('id', id);
+  if (kdNotenAktEintragId === id) kdNotenAktEintragId = null;
+  await kdLadeNoten();
+  kdRenderNoten();
+}
+
+async function kdNotenEintragSpeichern() {
+  if (!kdNotenFach || !kdNotenHauptkat) { showToast('Bitte Fach und Hauptkategorie wählen.', 'error'); return; }
+
+  const titel = document.getElementById('ne-titel')?.value.trim() || '';
+  const datum = document.getElementById('ne-datum')?.value || new Date().toISOString().slice(0, 10);
+  const eingabeart = kdNotenEingabeart;
+
+  const eintragDaten = {
+    klasse_id: kdAktiveKlasseId,
+    fach: kdNotenFach,
+    hauptkategorie: kdNotenHauptkat,
+    unterkategorie: kdNotenUnterkat || null,
+    titel,
+    datum,
+    eingabeart,
+    gesamtpunktzahl: null,
+    notenschluessel_index: null,
+  };
+
+  let gesamtpunktzahl = 0;
+  if (eingabeart === 'punkte') {
+    gesamtpunktzahl = parseFloat(document.getElementById('ne-gesamtpunktzahl')?.value) || 0;
+    eintragDaten.gesamtpunktzahl = gesamtpunktzahl;
+    eintragDaten.notenschluessel_index = kdNotenSchluesselIndex;
+  }
+
+  let eintragId = kdNotenAktEintragId;
+  if (eintragId) {
+    const { error } = await sb.from('noteneintraege').update(eintragDaten).eq('id', eintragId);
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+  } else {
+    const { data, error } = await sb.from('noteneintraege').insert(eintragDaten).select().single();
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+    eintragId = data.id;
+  }
+
+  const rows = [];
+  kdSchueler.forEach(s => {
+    if (eingabeart === 'direkt') {
+      const sel = document.getElementById('ne-note-' + s.id);
+      const wert = sel?.value || '';
+      if (wert) rows.push({ noteneintrag_id: eintragId, schueler_id: s.id, wert, punkte_erreicht: null });
+    } else {
+      const inp = document.getElementById('ne-punkte-' + s.id);
+      const punkte = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
+      if (!isNaN(punkte)) {
+        const prozent = gesamtpunktzahl > 0 ? (punkte / gesamtpunktzahl) * 100 : 0;
+        const wert = kdNotenProzentZuNote(prozent, kdNotenSchluesselIndex);
+        rows.push({ noteneintrag_id: eintragId, schueler_id: s.id, wert, punkte_erreicht: punkte });
+      }
+    }
+  });
+
+  await sb.from('noten').delete().eq('noteneintrag_id', eintragId);
+  if (rows.length > 0) await sb.from('noten').insert(rows);
+
+  showToast(kdNotenAktEintragId ? 'Noteneintrag aktualisiert.' : 'Noteneintrag gespeichert.', 'success');
+  kdNotenAktEintragId = null;
+  await kdLadeNoten();
+  kdRenderNoten();
+}
+
+function kdRenderNotenFachChips(faecher) {
+  return `<label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Fach:</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${faecher.map(f => `<button onclick="kdNotenSetFach('${f.replace(/'/g, "\\'")}')"
+        style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+        ${f === kdNotenFach ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${f}</button>`).join('')}
+    </div>`;
+}
+
+function kdRenderNotenEingabe() {
+  const faecher = kdNotenFaecher();
+  if (faecher.length === 0) {
+    return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📊</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Fächer konfiguriert</div>
+      <div style="font-size:13px;">Lege zuerst unter Einstellungen Fächer an.</div>
+    </div>`;
+  }
+  if (!kdNotenFach || !faecher.includes(kdNotenFach)) kdNotenFach = faecher[0];
+
+  const hauptkategorien = kdNotenHauptkategorien(kdNotenFach);
+  if (hauptkategorien.length === 0) {
+    return `
+      <div style="margin-bottom:16px;">${kdRenderNotenFachChips(faecher)}</div>
+      <div style="text-align:center;padding:32px 24px;color:var(--gray-500);">
+        <div style="font-size:13px;">Für <strong>${kdNotenFach}</strong> sind noch keine Hauptkategorien konfiguriert. Bitte unter Einstellungen → Notenkonfiguration anlegen.</div>
+      </div>`;
+  }
+  if (!kdNotenHauptkat || !hauptkategorien.some(h => h.name === kdNotenHauptkat)) kdNotenHauptkat = hauptkategorien[0].name;
+
+  const unterkategorien = kdNotenUnterkategorien(kdNotenFach, kdNotenHauptkat);
+  if (kdNotenUnterkat && !unterkategorien.some(u => u.name === kdNotenUnterkat)) kdNotenUnterkat = null;
+
+  const bearbeiteterEintrag = kdNotenAktEintragId ? kdNotenEintraege.find(e => e.id === kdNotenAktEintragId) : null;
+  const werteMap = {};
+  if (bearbeiteterEintrag) {
+    kdNotenWerte.filter(w => w.noteneintrag_id === bearbeiteterEintrag.id).forEach(w => { werteMap[w.schueler_id] = w; });
+  }
+
+  const titelVal = bearbeiteterEintrag ? (bearbeiteterEintrag.titel || '') : '';
+  const datumVal = bearbeiteterEintrag ? (bearbeiteterEintrag.datum || '') : new Date().toISOString().slice(0, 10);
+  const gesamtpunktzahlVal = bearbeiteterEintrag?.gesamtpunktzahl ?? '';
+  const schluesselListe = kdNotenSchluesselListe();
+
+  let html = '';
+
+  if (bearbeiteterEintrag) {
+    html += `<div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:#92400e;display:flex;justify-content:space-between;align-items:center;">
+      <span>✏️ Du bearbeitest einen bestehenden Noteneintrag.</span>
+      <button onclick="kdNotenEintragAbbrechen()" style="background:none;border:none;color:#92400e;text-decoration:underline;cursor:pointer;font-size:12px;">Abbrechen</button>
+    </div>`;
+  }
+
+  html += `<div style="margin-bottom:14px;">${kdRenderNotenFachChips(faecher)}</div>`;
+
+  html += `<div style="margin-bottom:14px;">
+    <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Hauptkategorie:</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${hauptkategorien.map(h => `<button onclick="kdNotenSetHauptkat('${h.name.replace(/'/g, "\\'")}')"
+        style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+        ${h.name === kdNotenHauptkat ? `background:${h.farbe || '#1d4ed8'};color:white;border:2px solid ${h.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${h.name}</button>`).join('')}
+    </div>
+  </div>`;
+
+  if (unterkategorien.length > 0) {
+    html += `<div style="margin-bottom:14px;">
+      <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Unterkategorie (optional):</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button onclick="kdNotenSetUnterkat(null)" style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+          ${!kdNotenUnterkat ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">Keine</button>
+        ${unterkategorien.map(u => `<button onclick="kdNotenSetUnterkat('${u.name.replace(/'/g, "\\'")}')"
+          style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+          ${u.name === kdNotenUnterkat ? `background:${u.farbe || '#1d4ed8'};color:white;border:2px solid ${u.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${u.name}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;">
+    <div class="form-group" style="margin-bottom:0;flex:1;min-width:180px;">
+      <label class="form-label">Titel / Bezeichnung</label>
+      <input class="form-input" type="text" id="ne-titel" value="${titelVal.replace(/"/g, '&quot;')}" placeholder="z.B. Klassenarbeit 1">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Datum</label>
+      <input class="form-input" type="date" id="ne-datum" value="${datumVal}">
+    </div>
+  </div>`;
+
+  const eingabeartBtnStyle = (a) => kdNotenEingabeart === a
+    ? 'background:#1d4ed8;color:white;border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+    : 'background:transparent;color:var(--gray-500);border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;';
+
+  html += `<div style="margin-bottom:16px;">
+    <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Eingabeart:</label>
+    <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;width:fit-content;">
+      <button onclick="kdNotenSetEingabeart('direkt')" style="${eingabeartBtnStyle('direkt')}">✏️ Note direkt</button>
+      <button onclick="kdNotenSetEingabeart('punkte')" style="${eingabeartBtnStyle('punkte')}">🧮 Über Punkte / Notenschlüssel</button>
+    </div>
+  </div>`;
+
+  if (kdNotenEingabeart === 'punkte') {
+    html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">Gesamtpunktzahl</label>
+        <input class="form-input" type="number" step="0.5" min="0" id="ne-gesamtpunktzahl" value="${gesamtpunktzahlVal}"
+          oninput="kdNotenGesamtpunktzahlAktualisieren()" style="width:120px;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">Notenschlüssel</label>
+        <select class="form-select" id="ne-schluessel" onchange="kdNotenSetSchluesselIndex(this.value)" style="width:160px;">
+          ${schluesselListe.map((sch, i) => `<option value="${i}" ${i === kdNotenSchluesselIndex ? 'selected' : ''}>${sch.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>`;
+  }
+
+  if (kdSchueler.length === 0) {
+    html += `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:13px;">Keine Schüler in dieser Klasse.</div>`;
+  } else {
+    html += `<div style="border:1px solid var(--gray-200);border-radius:10px;overflow:hidden;margin-bottom:16px;">`;
+    html += kdSchueler.map((s, idx) => {
+      const bestehend = werteMap[s.id];
+      const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50, #f9fafb)';
+      let feldHtml = '';
+      if (kdNotenEingabeart === 'direkt') {
+        const aktuellerWert = bestehend?.wert || '';
+        feldHtml = `<select id="ne-note-${s.id}" style="padding:6px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;width:90px;">
+          <option value="">–</option>
+          ${KD_NOTEN_CODES.map(code => `<option value="${code}" ${code === aktuellerWert ? 'selected' : ''}>${code}</option>`).join('')}
+        </select>`;
+      } else {
+        const punkteVal = bestehend?.punkte_erreicht ?? '';
+        feldHtml = `
+          <input type="number" step="0.5" min="0" id="ne-punkte-${s.id}" data-ne-punkte value="${punkteVal}"
+            oninput="kdNotenZeileAktualisieren(this)" placeholder="Punkte" style="width:80px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+          <span class="ne-note-anzeige" data-fuer="${s.id}" style="font-size:12px;color:var(--gray-500);margin-left:8px;min-width:90px;display:inline-block;"></span>`;
+      }
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:${rowBg};border-bottom:1px solid var(--gray-100);">
+        <span style="font-size:13px;font-weight:600;color:var(--gray-800);">${s.nachname}, ${s.vorname}</span>
+        <div style="display:flex;align-items:center;">${feldHtml}</div>
+      </div>`;
+    }).join('');
+    html += `</div>`;
+  }
+
+  html += `<div style="display:flex;gap:10px;">
+    <button class="btn btn-primary" onclick="kdNotenEintragSpeichern()">${bearbeiteterEintrag ? '💾 Aktualisieren' : '💾 Speichern'}</button>
+    ${bearbeiteterEintrag ? `<button class="btn btn-secondary" onclick="kdNotenEintragLoeschen('${bearbeiteterEintrag.id}')" style="color:#dc2626;">🗑 Eintrag löschen</button>` : ''}
+  </div>`;
+
+  const relevanteEintraege = kdNotenEintraege.filter(e => e.fach === kdNotenFach && e.hauptkategorie === kdNotenHauptkat);
+  if (relevanteEintraege.length > 0) {
+    html += `<div style="margin-top:28px;">
+      <div style="font-size:13px;font-weight:700;color:var(--gray-600);margin-bottom:8px;">Bestehende Einträge in dieser Kategorie:</div>
+      ${relevanteEintraege.map(e => {
+        const datumStr = e.datum ? new Date(e.datum + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:6px;">
+          <span style="font-size:13px;">${e.titel || '(ohne Titel)'} ${e.unterkategorie ? `· ${e.unterkategorie}` : ''} <span style="color:var(--gray-400);">· ${datumStr}</span></span>
+          <div style="display:flex;gap:8px;">
+            <button onclick="kdNotenEintragBearbeiten('${e.id}')" style="background:none;border:none;color:#1d4ed8;cursor:pointer;font-size:12px;font-weight:600;">Bearbeiten</button>
+            <button onclick="kdNotenEintragLoeschen('${e.id}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;">🗑</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  return html;
+}
+
+function kdRenderNotenUebersicht() {
+  return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
+    <div style="font-size:2.5rem;margin-bottom:12px;">📊</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Notenübersicht folgt</div>
+    <div style="font-size:13px;">Die Übersicht bauen wir als Nächstes.</div>
+  </div>`;
+}
+
+function kdRenderNoten() {
+  const container = document.getElementById('kd-content');
+  if (kdAktiveUnterseite !== 'noten') return;
+
+  const tabBtnStyle = (a) => kdNotenAnsicht === a
+    ? 'background:#1d4ed8;color:white;border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+    : 'background:transparent;color:var(--gray-500);border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;';
+
+  let html = `
+    <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;width:fit-content;margin-bottom:16px;">
+      <button onclick="kdNotenSetAnsicht('eingabe')" style="${tabBtnStyle('eingabe')}">✏️ Noteneingabe</button>
+      <button onclick="kdNotenSetAnsicht('uebersicht')" style="${tabBtnStyle('uebersicht')}">📊 Notenübersicht</button>
+    </div>`;
+
+  html += kdNotenAnsicht === 'eingabe' ? kdRenderNotenEingabe() : kdRenderNotenUebersicht();
+
+  container.innerHTML = html;
+  if (kdNotenAnsicht === 'eingabe' && kdNotenEingabeart === 'punkte') kdNotenGesamtpunktzahlAktualisieren();
 }
 
 function kdRenderCheckliste() {
