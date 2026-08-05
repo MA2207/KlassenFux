@@ -559,7 +559,7 @@
       </div>
     </div>
     <div style="display:flex;gap:3px;background:var(--gray-100);border-radius:9px;padding:3px;margin-bottom:16px;width:fit-content;">
-      <button data-kd-tab="checkliste" onclick="kdZeigeUnterseite('checkliste')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--white);color:var(--gray-800);box-shadow:0 1px 3px rgba(0,0,0,0.1);">✅ Checkliste</button>
+      <button data-kd-tab="checkliste" onclick="kdZeigeUnterseite('checkliste')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#dcfce7;color:#15803d;box-shadow:0 0 0 2px #86efac;">✅ Checkliste</button>
       <button data-kd-tab="unterricht" onclick="kdZeigeUnterseite('unterricht')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📚 Unterricht</button>
     </div>
     <div id="kd-content"></div>
@@ -1110,10 +1110,10 @@ function kdZeigeUnterseite(seite) {
   kdAktiveUnterseite = seite;
   document.querySelectorAll('[data-kd-tab]').forEach(btn => {
     const isActive = btn.dataset.kdTab === seite;
-    btn.style.background = isActive ? 'var(--white)' : 'transparent';
-    btn.style.color = isActive ? 'var(--gray-800)' : 'var(--gray-500)';
-    btn.style.fontWeight = isActive ? '600' : '400';
-    btn.style.boxShadow = isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
+    btn.style.background = isActive ? '#dcfce7' : 'transparent';
+    btn.style.color = isActive ? '#15803d' : 'var(--gray-500)';
+    btn.style.fontWeight = isActive ? '700' : '400';
+    btn.style.boxShadow = isActive ? '0 0 0 2px #86efac' : 'none';
   });
   if (seite === 'checkliste') kdRenderCheckliste();
   if (seite === 'unterricht') { kdLadeUnterricht().then(() => kdRenderUnterricht()); }
