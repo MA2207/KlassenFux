@@ -1612,9 +1612,12 @@ function kdRenderAnwesenheit() {
 
   // Vergangene Stunden (KW ≤ aktuelle KW)
   const heute = new Date();
-  const { kw: hKW, jahr: hJahr } = getISOWeek(heute);
-  const hPos = hJahr * 100 + hKW;
-  const vergangenStunden = kdUnterricht.filter(r => r.jahr * 100 + r.kalenderwoche <= hPos);
+  // Stunden bis einschließlich heute (exaktes Datum, nicht nur KW)
+  const heuteEnde = new Date(heute); heuteEnde.setUTCHours(23, 59, 59, 999);
+  const vergangenStunden = kdUnterricht.filter(r => {
+    const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+    return datum <= heuteEnde;
+  });
 
   const tabBtnStyle = (a) => kdAnwAnsicht === a
     ? 'background:#1d4ed8;color:white;border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
@@ -1637,9 +1640,18 @@ function kdRenderAnwErfassen(vergangenStunden) {
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
 
   if (vergangenStunden.length === 0) {
-    return `<div style="text-align:center;padding:40px 20px;color:var(--gray-400);">
-      <div style="font-size:2rem;margin-bottom:8px;">👥</div>
-      <div>Noch keine vergangenen Stunden vorhanden.</div>
+    // Nächste Stunde ermitteln für hilfreiche Nachricht
+    const naechste = kdUnterricht.length > 0 ? kdUnterricht[0] : null;
+    let hinweis = 'Es sind noch keine Stunden für heute oder früher vorhanden.';
+    if (naechste) {
+      const datum = kdDatumAusKW(naechste.kalenderwoche, naechste.jahr, naechste.wochentag);
+      const datumStr = datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC'});
+      hinweis = `Die erste Schulstunde findet am <strong>${datumStr}</strong> statt.<br>Ab dann kannst du hier die Anwesenheit erfassen.`;
+    }
+    return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📅</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Noch keine Stunden verfügbar</div>
+      <div style="font-size:13px;line-height:1.7;">${hinweis}</div>
     </div>`;
   }
 
