@@ -2796,6 +2796,11 @@ async function kdLadeNoten() {
 
 function kdNotenFaecher() { return kdNotenEinst.faecher || []; }
 
+// Fächer, die dieser Klasse laut Stundenplan tatsächlich unterrichtet werden
+function kdNotenKlassenFaecher() {
+  return [...new Set(kdUnterricht.map(r => r.fach || r._spFach).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+}
+
 function kdNotenHauptkategorien(fach) {
   return (kdNotenEinst.notenKonfiguration && kdNotenEinst.notenKonfiguration[fach]?.hauptkategorien) || [];
 }
@@ -2848,6 +2853,10 @@ function kdNotenMaskeOeffnen() {
   kdNotenHauptkat = null;
   kdNotenUnterkat = null;
   kdNotenEingabeart = 'direkt';
+  if (!kdNotenFach) {
+    const faecher = kdNotenKlassenFaecher();
+    if (faecher.length > 0) kdNotenFach = faecher[0];
+  }
   kdRenderNoten();
 }
 
@@ -2942,9 +2951,13 @@ async function kdNotenEintragSpeichern() {
   kdRenderNoten();
 }
 
-function kdRenderNotenFachChips(faecher) {
+function kdRenderNotenFachChips(faecher, mitAlle = true) {
+  const alleChip = mitAlle ? `<button onclick="kdNotenSetFach(null)"
+        style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+        ${!kdNotenFach ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">Alle Fächer</button>` : '';
   return `<label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Fach:</label>
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${alleChip}
       ${faecher.map(f => `<button onclick="kdNotenSetFach('${f.replace(/'/g, "\\'")}')"
         style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
         ${f === kdNotenFach ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${f}</button>`).join('')}
@@ -2952,23 +2965,24 @@ function kdRenderNotenFachChips(faecher) {
 }
 
 function kdRenderNotenEingabe() {
-  const faecher = kdNotenFaecher();
+  const faecher = kdNotenKlassenFaecher();
   if (faecher.length === 0) {
     return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
       <div style="font-size:2.5rem;margin-bottom:12px;">📊</div>
-      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Fächer konfiguriert</div>
-      <div style="font-size:13px;">Lege zuerst unter Einstellungen Fächer an.</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Fächer in dieser Klasse</div>
+      <div style="font-size:13px;">Weise dieser Klasse im Stundenplan Fächer zu.</div>
     </div>`;
   }
-  if (!kdNotenFach || !faecher.includes(kdNotenFach)) kdNotenFach = faecher[0];
 
-  // Landing-Ansicht: Fach wählen, Button "Noten eintragen", darunter alle bestehenden Einträge
+  // Landing-Ansicht: Fach wählen (oder "Alle Fächer"), Button "Noten eintragen", darunter alle bestehenden Einträge
   if (!kdNotenMaskeOffen) {
     let html = `<div style="margin-bottom:16px;">${kdRenderNotenFachChips(faecher)}</div>`;
     html += `<button class="btn btn-primary" onclick="kdNotenMaskeOeffnen()" style="margin-bottom:22px;">➕ Noten eintragen</button>`;
     html += kdRenderNotenListe();
     return html;
   }
+
+  if (!kdNotenFach || !faecher.includes(kdNotenFach)) kdNotenFach = faecher[0];
 
   const hauptkategorien = kdNotenHauptkategorien(kdNotenFach);
   if (hauptkategorien.length === 0) {
@@ -2999,7 +3013,7 @@ function kdRenderNotenEingabe() {
     <button onclick="kdNotenMaskeSchliessen()" style="background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:12px;">✖ Schließen</button>
   </div>`;
 
-  html += `<div style="margin-bottom:14px;">${kdRenderNotenFachChips(faecher)}</div>`;
+  html += `<div style="margin-bottom:14px;">${kdRenderNotenFachChips(faecher, false)}</div>`;
 
   html += `<div style="margin-bottom:14px;">
     <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Hauptkategorie:</label>
@@ -3100,30 +3114,40 @@ function kdRenderNotenEingabe() {
 }
 
 function kdRenderNotenListe() {
-  const eintraegeFach = kdNotenEintraege.filter(e => e.fach === kdNotenFach);
-  if (eintraegeFach.length === 0) {
-    return `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:13px;">Noch keine Noten für ${kdNotenFach} eingetragen.</div>`;
+  const gefiltert = kdNotenFach ? kdNotenEintraege.filter(e => e.fach === kdNotenFach) : kdNotenEintraege;
+  if (gefiltert.length === 0) {
+    return `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:13px;">Noch keine Noten ${kdNotenFach ? 'für ' + kdNotenFach + ' ' : ''}eingetragen.</div>`;
   }
-  const sortiert = [...eintraegeFach].sort((a, b) => {
+  const sortiert = [...gefiltert].sort((a, b) => {
+    if (a.fach !== b.fach) return a.fach.localeCompare(b.fach, 'de');
     if (a.hauptkategorie !== b.hauptkategorie) return a.hauptkategorie.localeCompare(b.hauptkategorie, 'de');
     const ua = a.unterkategorie || '', ub = b.unterkategorie || '';
     if (ua !== ub) return ua.localeCompare(ub, 'de');
     return (b.datum || '').localeCompare(a.datum || '');
   });
 
+  const gesamtSchueler = kdSchueler.length;
+
   let html = '<div>';
-  let letzteGruppe = null;
   sortiert.forEach(e => {
-    const gruppe = `${e.hauptkategorie}${e.unterkategorie ? ' · ' + e.unterkategorie : ''}`;
-    if (gruppe !== letzteGruppe) {
-      html += `<div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.03em;margin:${letzteGruppe ? '18px' : '0'} 0 6px;">${gruppe}</div>`;
-      letzteGruppe = gruppe;
-    }
-    const datumStr = e.datum ? new Date(e.datum + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+    const datumStr = e.datum ? new Date(e.datum + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '–';
+    const kategorie = `${e.hauptkategorie}${e.unterkategorie ? ' · ' + e.unterkategorie : ''}`;
     const anzahlNoten = kdNotenWerte.filter(w => w.noteneintrag_id === e.id).length;
-    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:6px;">
-      <span style="font-size:13px;">${e.titel || '(ohne Titel)'} <span style="color:var(--gray-400);">· ${datumStr} · ${anzahlNoten} Note${anzahlNoten === 1 ? '' : 'n'}</span></span>
-      <div style="display:flex;gap:8px;">
+    const vollstaendig = gesamtSchueler > 0 && anzahlNoten >= gesamtSchueler;
+    const statusFarbe = vollstaendig ? '#16a34a' : '#dc2626';
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:6px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;">
+        <span style="font-weight:700;color:var(--gray-800);">${e.fach}</span>
+        <span style="color:var(--gray-300);">·</span>
+        <span style="color:var(--gray-600);">${datumStr}</span>
+        <span style="color:var(--gray-300);">·</span>
+        <span style="color:var(--gray-600);">${kategorie}</span>
+        <span style="color:var(--gray-300);">·</span>
+        <span style="color:var(--gray-800);">${e.titel || '(ohne Titel)'}</span>
+        <span style="color:var(--gray-300);">·</span>
+        <span style="font-weight:700;color:${statusFarbe};">${anzahlNoten} von ${gesamtSchueler}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
         <button onclick="kdNotenEintragBearbeiten('${e.id}')" style="background:none;border:none;color:#1d4ed8;cursor:pointer;font-size:12px;font-weight:600;">Bearbeiten</button>
         <button onclick="kdNotenEintragLoeschen('${e.id}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;">🗑</button>
       </div>
