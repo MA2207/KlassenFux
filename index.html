@@ -1084,6 +1084,7 @@ let kdAnwesenheit = []; // { id, schueler_id, kalenderwoche, jahr, wochentag, st
 let kdAnwAktStunde = null; // { kw, jahr, wochentag, stunde } – gewählte Stunde im Erfassen-Tab
 let kdAnwAnsicht = 'erfassen'; // 'erfassen' | 'uebersicht'
 let kdAnwFachFilter = null; // Fach-Filter für Erfassen
+let kdAnwUebFachFilter = null; // Fach-Filter für Übersicht
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
   // Aktuelle KW suchen, sonst nächste verfügbare
@@ -1108,6 +1109,7 @@ async function kdOeffneKlasse(klasseId) {
   kdAnwAktStunde = null;         // Anwesenheits-Auswahl zurücksetzen
   kdAnwAnsicht = 'erfassen';
   kdAnwFachFilter = null;
+  kdAnwUebFachFilter = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht()]);
@@ -1612,6 +1614,10 @@ function kdAnwSetStunde(kw, jahr, wochentag, stunde) {
   kdRenderAnwesenheit();
 }
 
+function kdAnwSetUebFach(fach) {
+  kdAnwUebFachFilter = fach || null;
+  kdRenderAnwesenheit();
+}
 function kdAnwSetFach(fach) {
   kdAnwFachFilter = fach || null;
   kdAnwAktStunde = null; // Auswahl zurücksetzen, damit erste Stunde des Fachs vorausgewählt wird
@@ -1678,7 +1684,7 @@ function kdRenderAnwesenheit() {
 
   html += kdAnwAnsicht === 'erfassen'
     ? kdRenderAnwErfassen(vergangenStunden)
-    : kdRenderAnwUebersicht(vergangenStunden);
+    : kdRenderAnwUebersicht(vergangenFuerUebersicht);
 
   container.innerHTML = html;
 }
@@ -1808,11 +1814,31 @@ function kdRenderAnwUebersicht(vergangenStunden) {
   if (kdSchueler.length === 0) {
     return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
   }
-  if (vergangenStunden.length === 0) {
-    return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Noch keine vergangenen Stunden vorhanden.</div>`;
+
+  // ── Fach-Filter ──────────────────────────────────────────────────
+  const alleFaecher = [...new Set(vergangenStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  let html = '';
+  if (alleFaecher.length > 1) {
+    const chipStyle = (f) => f === kdAnwUebFachFilter
+      ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
+      : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
+    html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Fach:</span>
+      <button onclick="kdAnwSetUebFach(null)" style="${chipStyle(null)}">Alle</button>
+      ${alleFaecher.map(f => `<button onclick="kdAnwSetUebFach('${f.replace(/'/g,"\\'")}')" style="${chipStyle(f)}">${f}</button>`).join('')}
+    </div>`;
+  }
+
+  const gefiltert = kdAnwUebFachFilter
+    ? vergangenStunden.filter(r => (r.fach || r._spFach) === kdAnwUebFachFilter)
+    : vergangenStunden;
+
+  if (gefiltert.length === 0) {
+    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Noch keine vergangenen Stunden vorhanden.</div>`;
   }
 
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const totalStunden = gefiltert.length;
 
   // Lookup: "schuelerId-kw-jahr-wd-std" → status
   const anwLookup = {};
@@ -1821,44 +1847,70 @@ function kdRenderAnwUebersicht(vergangenStunden) {
   });
 
   const statusKurz = {
-    fehlend:      { text:'F', bg:'#fee2e2', color:'#991b1b', title:'Fehlend' },
+    fehlend:      { text:'F', bg:'#fee2e2', color:'#991b1b', title:'Unentschuldigt' },
     entschuldigt: { text:'E', bg:'#fef3c7', color:'#92400e', title:'Entschuldigt' },
     verspaetet:   { text:'V', bg:'#ede9fe', color:'#5b21b6', title:'Verspätet' },
   };
 
-  // Zusammenfassung pro Schüler
+  // Zusammenfassung pro Schüler – nur für gefilterte Stunden
   const sum = {};
   kdSchueler.forEach(s => { sum[s.id] = { fehlend:0, entschuldigt:0, verspaetet:0 }; });
-  kdAnwesenheit.forEach(a => {
-    if (sum[a.schueler_id]) sum[a.schueler_id][a.status] = (sum[a.schueler_id][a.status]||0) + 1;
+  gefiltert.forEach(r => {
+    kdSchueler.forEach(s => {
+      const key = `${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+      const status = anwLookup[key];
+      if (status && sum[s.id]) sum[s.id][status] = (sum[s.id][status] || 0) + 1;
+    });
   });
 
-  let html = `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);">
+  html += `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);">
     <table style="border-collapse:collapse;min-width:max-content;width:100%;">
       <thead>
         <tr>
-          <th style="position:sticky;left:0;z-index:2;background:var(--gray-800);color:white;padding:8px 14px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;min-width:150px;">Schüler/in</th>
-          ${vergangenStunden.map(r => {
+          <th style="position:sticky;left:0;z-index:2;background:var(--gray-800);color:white;padding:8px 14px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;min-width:190px;">Schüler/in</th>
+          ${gefiltert.map(r => {
             const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
             const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
-            return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;">
+            const fach = r.fach || r._spFach;
+            return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;" title="${fach||''}">
               <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
               <div style="opacity:0.7;">${datumStr}</div>
               <div style="opacity:0.5;">${r.stunde}.</div>
             </th>`;
           }).join('')}
-          <th style="background:var(--gray-700);color:white;padding:6px 10px;font-size:10px;font-weight:700;text-align:center;white-space:nowrap;min-width:80px;">Summe</th>
         </tr>
       </thead>
       <tbody>`;
 
   kdSchueler.forEach((s, idx) => {
     const rowBg = idx % 2 === 0 ? 'white' : '#fafafa';
-    const s_sum = sum[s.id];
-    const gesamtFehlend = s_sum.fehlend + s_sum.entschuldigt + s_sum.verspaetet;
+    const st = sum[s.id];
+    const fehlend = st.fehlend;
+    const entschuldigt = st.entschuldigt;
+    const verspaetet = st.verspaetet;
+    // Anwesenheitsquote: Verspätete zählen als anwesend
+    const anwesenheitProzent = totalStunden > 0
+      ? Math.round((totalStunden - fehlend - entschuldigt) / totalStunden * 100)
+      : 100;
+    const prozentColor = anwesenheitProzent >= 90 ? '#15803d' : anwesenheitProzent >= 75 ? '#b45309' : '#991b1b';
+
+    const badges = [
+      fehlend      ? `<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Unentschuldigt fehlend">${fehlend}×F</span>` : '',
+      entschuldigt ? `<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Entschuldigt">${entschuldigt}×E</span>` : '',
+      verspaetet   ? `<span style="background:#ede9fe;color:#5b21b6;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Verspätet">${verspaetet}×V</span>` : '',
+      `<span style="color:${prozentColor};font-size:10px;font-weight:700;" title="Anwesenheitsquote">${anwesenheitProzent}%</span>`,
+    ].filter(Boolean).join(' ');
+
     html += `<tr>
-      <td style="position:sticky;left:0;z-index:1;background:${rowBg};padding:7px 14px;font-size:12px;font-weight:600;color:var(--gray-800);white-space:nowrap;border-bottom:1px solid var(--gray-100);">${s.nachname}, ${s.vorname}</td>
-      ${vergangenStunden.map(r => {
+      <td style="position:sticky;left:0;z-index:1;background:${rowBg};padding:7px 14px;border-bottom:1px solid var(--gray-100);">
+        <div style="font-size:12px;font-weight:600;color:var(--gray-800);white-space:nowrap;">${s.nachname}, ${s.vorname}</div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;">
+          ${(fehlend || entschuldigt || verspaetet)
+            ? badges
+            : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
+        </div>
+      </td>
+      ${gefiltert.map(r => {
         const key = `${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
         const status = anwLookup[key];
         if (!status) return `<td style="background:${rowBg};border-bottom:1px solid var(--gray-100);"></td>`;
@@ -1867,19 +1919,15 @@ function kdRenderAnwUebersicht(vergangenStunden) {
           <span style="color:${cfg.color};font-size:11px;font-weight:700;">${cfg.text}</span>
         </td>`;
       }).join('')}
-      <td style="background:${rowBg};border-bottom:1px solid var(--gray-100);text-align:center;padding:4px 8px;font-size:11px;font-weight:700;">
-        ${!gesamtFehlend
-          ? '<span style="color:#16a34a;">✓</span>'
-          : `${s_sum.fehlend?`<span style="color:#991b1b">${s_sum.fehlend}F</span> `:''}${s_sum.entschuldigt?`<span style="color:#92400e">${s_sum.entschuldigt}E</span> `:''}${s_sum.verspaetet?`<span style="color:#5b21b6">${s_sum.verspaetet}V</span>`:''}`.trim()}
-      </td>
     </tr>`;
   });
 
   html += `</tbody></table></div>
     <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--gray-500);">
-      <span><span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:10px;font-weight:700;">F</span> Fehlend</span>
+      <span><span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:10px;font-weight:700;">F</span> Unentschuldigt</span>
       <span><span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-weight:700;">E</span> Entschuldigt</span>
       <span><span style="background:#ede9fe;color:#5b21b6;padding:1px 7px;border-radius:10px;font-weight:700;">V</span> Verspätet</span>
+      <span style="color:var(--gray-400);">% = Anwesenheitsquote (Verspätete zählen als anwesend)</span>
     </div>`;
   return html;
 }
