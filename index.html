@@ -758,6 +758,15 @@
         </table>
       </div>
       <button class="btn btn-secondary btn-sm" onclick="kdNotenEinstellungenZuruecksetzen()" style="margin-top:10px;">↺ Auf Standard zurücksetzen</button>
+
+      <div style="border-top:1px solid var(--gray-100);margin-top:20px;padding-top:16px;">
+        <div style="font-size:0.85rem;font-weight:700;color:var(--gray-700);margin-bottom:6px;">Fachspezifische Bezeichnungen &amp; Gewichtung</div>
+        <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 10px;">
+          Für einzelne Fächer können die Hauptkategorien „Mündlich"/„Schriftlich" umbenannt und individuell gewichtet werden – z.B. Sport: Sportliche Leistung / Mitarbeit.
+        </p>
+        <div id="noten-fach-overrides-liste"></div>
+        <button class="btn btn-secondary btn-sm" onclick="kdNotenFachOverrideNeu()" style="margin-top:8px;">＋ Fach hinzufügen</button>
+      </div>
     </div>
   </div>
 
@@ -1154,6 +1163,27 @@ let KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT };
 let KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT };
 const KD_NOTENGEWICHTUNG_DEFAULT = { muendlich: 50, schriftlich: 50 };
 let KD_NOTENGEWICHTUNG = { ...KD_NOTENGEWICHTUNG_DEFAULT };
+let KD_NOTEN_FACH_OVERRIDES = {}; // { "Sport": { fach, labelMuendlich, labelSchriftlich, gewichtMuendlich, gewichtSchriftlich } }
+
+function kdHauptkatLabel(fach, key) {
+  const ov = fach && KD_NOTEN_FACH_OVERRIDES[fach];
+  if (ov) {
+    if (key === 'muendlich' && ov.labelMuendlich) return ov.labelMuendlich;
+    if (key === 'schriftlich' && ov.labelSchriftlich) return ov.labelSchriftlich;
+  }
+  return key === 'muendlich' ? 'Mündlich' : 'Schriftlich';
+}
+function kdHauptkatEmoji(key) { return key === 'muendlich' ? '🗣' : '✏️'; }
+function kdHauptkatGewicht(fach) {
+  const ov = fach && KD_NOTEN_FACH_OVERRIDES[fach];
+  if (ov && (ov.gewichtMuendlich != null || ov.gewichtSchriftlich != null)) {
+    return {
+      muendlich: ov.gewichtMuendlich ?? (100 - (ov.gewichtSchriftlich ?? 50)),
+      schriftlich: ov.gewichtSchriftlich ?? (100 - (ov.gewichtMuendlich ?? 50)),
+    };
+  }
+  return { ...KD_NOTENGEWICHTUNG };
+}
 let kdAnwUebHjFilter = null;  // null=Alle, 1=1.HJ, 2=2.HJ
 let kdHaUebHjFilter  = null;
 let kdUbUebHjFilter  = null;
@@ -2808,10 +2838,11 @@ async function kdLadeNotenEinstellungen() {
   KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT, ...(saved.notenwerte || {}) };
   KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT, ...(saved.notenschluessel || {}) };
   KD_NOTENGEWICHTUNG = { ...KD_NOTENGEWICHTUNG_DEFAULT, ...(saved.notengewichtung || {}) };
+  KD_NOTEN_FACH_OVERRIDES = saved.notenFachUeberschreibung || {};
 }
 
 // Gewichteter Gesamtdurchschnitt aus mündlichen/schriftlichen Einzelwerten
-function kdGewichteterDurchschnitt(werte, eintraege) {
+function kdGewichteterDurchschnitt(werte, eintraege, fach = null) {
   const wM = [], wS = [], sonst = [];
   eintraege.forEach((e, i) => {
     const wert = werte[i];
@@ -2828,7 +2859,8 @@ function kdGewichteterDurchschnitt(werte, eintraege) {
   }
   if (avgM === null) return avgS;
   if (avgS === null) return avgM;
-  const gm = KD_NOTENGEWICHTUNG.muendlich ?? 50, gs = KD_NOTENGEWICHTUNG.schriftlich ?? 50;
+  const g = kdHauptkatGewicht(fach);
+  const gm = g.muendlich ?? 50, gs = g.schriftlich ?? 50;
   const summe = (gm + gs) || 1;
   return (avgM * gm + avgS * gs) / summe;
 }
@@ -2933,8 +2965,8 @@ function kdRenderNotenErfassen() {
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
     <span style="font-size:12px;font-weight:600;color:var(--gray-500);">Kategorie:</span>
     <button onclick="kdNotenSetHauptkat(null)" style="${chipK(null)}${btn}">Alle</button>
-    <button onclick="kdNotenSetHauptkat('muendlich')" style="${chipK('muendlich')}${btn}">🗣 Mündlich</button>
-    <button onclick="kdNotenSetHauptkat('schriftlich')" style="${chipK('schriftlich')}${btn}">✏️ Schriftlich</button>
+    <button onclick="kdNotenSetHauptkat('muendlich')" style="${chipK('muendlich')}${btn}">${kdHauptkatEmoji('muendlich')} ${kdHauptkatLabel(kdNotenFachFilter,'muendlich')}</button>
+    <button onclick="kdNotenSetHauptkat('schriftlich')" style="${chipK('schriftlich')}${btn}">${kdHauptkatEmoji('schriftlich')} ${kdHauptkatLabel(kdNotenFachFilter,'schriftlich')}</button>
     <button onclick="kdNotenNeuerEintrag()" style="background:#1d4ed8;color:white;border:none;${btn}margin-left:auto;">＋ Neuer Eintrag</button>
     <button onclick="kdNotenKatVerwalten()" style="background:var(--white);color:var(--gray-600);border:2px solid var(--gray-200);${btn}">⚙️ Kategorien</button>
   </div>`;
@@ -3068,8 +3100,8 @@ function kdRenderNotenUebersicht() {
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
     <span style="font-size:12px;font-weight:600;color:var(--gray-500);">Kategorie:</span>
     <button onclick="kdNotenSetHauptkat(null)" style="${chipK(null)}${btn}">Alle</button>
-    <button onclick="kdNotenSetHauptkat('muendlich')" style="${chipK('muendlich')}${btn}">🗣 Mündlich</button>
-    <button onclick="kdNotenSetHauptkat('schriftlich')" style="${chipK('schriftlich')}${btn}">✏️ Schriftlich</button>
+    <button onclick="kdNotenSetHauptkat('muendlich')" style="${chipK('muendlich')}${btn}">${kdHauptkatEmoji('muendlich')} ${kdHauptkatLabel(kdNotenFachFilter,'muendlich')}</button>
+    <button onclick="kdNotenSetHauptkat('schriftlich')" style="${chipK('schriftlich')}${btn}">${kdHauptkatEmoji('schriftlich')} ${kdHauptkatLabel(kdNotenFachFilter,'schriftlich')}</button>
   </div>`;
 
   let eintraege = kdNotenEintraege;
@@ -3098,7 +3130,7 @@ function kdRenderNotenUebersicht() {
           ${e.ist_punkte_eintrag?`<div style="opacity:0.6;font-size:9px;">${e.gesamtpunktzahl}Pkt</div>`:`<div style="opacity:0.6;font-size:9px;">${kat?.name||''}</div>`}
         </th>`;
       }).join('')}
-      <th style="background:#166534;color:white;padding:5px 10px;font-size:10px;text-align:center;min-width:48px;" title="${kdNotenHauptkat ? 'Durchschnitt dieser Kategorie' : `Gewichtet: ${KD_NOTENGEWICHTUNG.muendlich ?? 50}% mündlich / ${KD_NOTENGEWICHTUNG.schriftlich ?? 50}% schriftlich`}">Ø${kdNotenHauptkat ? '' : ' *'}</th>
+      <th style="background:#166534;color:white;padding:5px 10px;font-size:10px;text-align:center;min-width:48px;" title="${kdNotenHauptkat ? 'Durchschnitt dieser Kategorie' : `Gewichtet: ${kdHauptkatGewicht(kdNotenFachFilter).muendlich ?? 50}% ${kdHauptkatLabel(kdNotenFachFilter,'muendlich')} / ${kdHauptkatGewicht(kdNotenFachFilter).schriftlich ?? 50}% ${kdHauptkatLabel(kdNotenFachFilter,'schriftlich')}`}">Ø${kdNotenHauptkat ? '' : ' *'}</th>
     </tr></thead>
     <tbody>`;
 
@@ -3111,7 +3143,7 @@ function kdRenderNotenUebersicht() {
     const vorh = werte.filter(v => v !== null);
     const sch = kdNotenHauptkat
       ? (vorh.length > 0 ? vorh.reduce((a,b)=>a+b,0)/vorh.length : null)
-      : kdGewichteterDurchschnitt(werte, eintraege);
+      : kdGewichteterDurchschnitt(werte, eintraege, kdNotenFachFilter);
     const schF = sch !== null ? kdNoteFarbe(sch) : null;
 
     html += `<tr>
@@ -3153,7 +3185,7 @@ function kdRenderNotenUebersicht() {
           const werte = eintraege.map(e => { const n=kdNotenDaten.find(n=>n.schueler_id===s.id&&n.noteneintrag_id===e.id); return n?n.wert:null; });
           return kdNotenHauptkat
             ? (()=>{ const v=werte.filter(w=>w!==null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; })()
-            : kdGewichteterDurchschnitt(werte, eintraege);
+            : kdGewichteterDurchschnitt(werte, eintraege, kdNotenFachFilter);
         }).filter(v => v !== null);
         const a = proSchueler.length ? proSchueler.reduce((x,y)=>x+y,0)/proSchueler.length : null;
         return a!==null?`<span style="color:white;font-size:11px;font-weight:700;">${a.toFixed(2)}</span>`:'<span style="color:rgba(255,255,255,0.3);">–</span>';
@@ -3163,7 +3195,8 @@ function kdRenderNotenUebersicht() {
 
   html += `</tbody></table></div>`;
   if (!kdNotenHauptkat) {
-    html += `<div style="font-size:10px;color:var(--gray-400);margin-top:6px;">* Gewichtet: ${KD_NOTENGEWICHTUNG.muendlich ?? 50}% mündlich / ${KD_NOTENGEWICHTUNG.schriftlich ?? 50}% schriftlich (einstellbar unter Einstellungen → Notenverwaltung)</div>`;
+    const gw = kdHauptkatGewicht(kdNotenFachFilter);
+    html += `<div style="font-size:10px;color:var(--gray-400);margin-top:6px;">* Gewichtet: ${gw.muendlich ?? 50}% ${kdHauptkatLabel(kdNotenFachFilter,'muendlich')} / ${gw.schriftlich ?? 50}% ${kdHauptkatLabel(kdNotenFachFilter,'schriftlich')}${kdNotenFachFilter ? '' : ' (globaler Standard – Fach auswählen für ggf. abweichende Fach-Gewichtung)'} (einstellbar unter Einstellungen → Notenverwaltung)</div>`;
   }
   return html;
 }
@@ -3204,7 +3237,7 @@ function kdNotenNeuerEintrag(editId = null) {
       <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:4px;">Kategorie</label>
       <select id="kd-noten-kat" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:12px;">
         <option value="">– keine –</option>
-        ${kdNotenKat.map(k=>`<option value="${k.id}" ${k.id===vKat?'selected':''}>${k.hauptkat==='muendlich'?'🗣':'✏️'} ${k.name}</option>`).join('')}
+        ${kdNotenKat.map(k=>`<option value="${k.id}" ${k.id===vKat?'selected':''}>${kdHauptkatEmoji(k.hauptkat)} ${k.name}</option>`).join('')}
       </select>
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f0fdf4;border-radius:8px;margin-bottom:12px;">
         <input type="checkbox" id="kd-noten-punkte" ${vPunkte?'checked':''} onchange="document.getElementById('kd-noten-punkte-block').style.display=this.checked?'block':'none'" style="width:16px;height:16px;cursor:pointer;">
@@ -3282,8 +3315,8 @@ function kdNotenKatVerwalten() {
         return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;">
           <input id="kd-kat-edit-name" value="${k.name.replace(/"/g,'&quot;')}" style="flex:1;padding:6px 8px;border:1.5px solid #1d4ed8;border-radius:6px;font-size:13px;">
           <select id="kd-kat-edit-hauptkat" style="padding:6px;border:1.5px solid var(--gray-200);border-radius:6px;font-size:12px;">
-            <option value="muendlich" ${k.hauptkat==='muendlich'?'selected':''}>🗣 Mündlich</option>
-            <option value="schriftlich" ${k.hauptkat==='schriftlich'?'selected':''}>✏️ Schriftlich</option>
+            <option value="muendlich" ${k.hauptkat==='muendlich'?'selected':''}>${kdHauptkatEmoji('muendlich')} ${kdHauptkatLabel(kdNotenFachFilter,'muendlich')}</option>
+            <option value="schriftlich" ${k.hauptkat==='schriftlich'?'selected':''}>${kdHauptkatEmoji('schriftlich')} ${kdHauptkatLabel(kdNotenFachFilter,'schriftlich')}</option>
           </select>
           <button onclick="kdNotenKatBearbeitenSpeichern('${k.id}')" style="background:#dcfce7;border:none;color:#15803d;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:6px;">✓</button>
           <button onclick="kdNotenKatEditId=null;kdNotenKatVerwalten();" style="background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:13px;padding:6px 8px;">✕</button>
@@ -3297,15 +3330,16 @@ function kdNotenKatVerwalten() {
     }).join('');
   el.innerHTML = `
     <div style="background:white;border-radius:16px;padding:24px;width:90%;max-width:440px;max-height:90vh;overflow-y:auto;">
-      <h3 style="margin:0 0 16px;font-size:16px;color:var(--gray-800);">Kategorien verwalten</h3>
-      <div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:4px;">🗣 Mündlich</div>${rl(muendlich)}</div>
-      <div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px;">✏️ Schriftlich</div>${rl(schriftlich)}</div>
+      <h3 style="margin:0 0 4px;font-size:16px;color:var(--gray-800);">Kategorien verwalten</h3>
+      ${kdNotenFachFilter ? `<p style="font-size:11px;color:var(--gray-400);margin:0 0 14px;">Bezeichnungen für Fach „${kdNotenFachFilter}"${KD_NOTEN_FACH_OVERRIDES[kdNotenFachFilter] ? '' : ' (Standard – in Einstellungen anpassbar)'}</p>` : `<p style="font-size:11px;color:var(--gray-400);margin:0 0 14px;">Fach oben auswählen, um fachspezifische Bezeichnungen zu sehen.</p>`}
+      <div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:4px;">${kdHauptkatEmoji('muendlich')} ${kdHauptkatLabel(kdNotenFachFilter,'muendlich')}</div>${rl(muendlich)}</div>
+      <div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px;">${kdHauptkatEmoji('schriftlich')} ${kdHauptkatLabel(kdNotenFachFilter,'schriftlich')}</div>${rl(schriftlich)}</div>
       <div style="border-top:1px solid var(--gray-100);padding-top:12px;">
         <div style="font-size:12px;font-weight:700;color:var(--gray-600);margin-bottom:8px;">Neue Kategorie</div>
         <input id="kd-kat-name" placeholder="Name (z.B. Abfrage, Schulaufgabe)" style="width:100%;box-sizing:border-box;padding:8px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;margin-bottom:8px;">
         <div style="display:flex;gap:8px;">
-          <button onclick="kdNotenKatSpeichern('muendlich')" style="flex:1;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:#dbeafe;color:#1e40af;">+ Mündlich</button>
-          <button onclick="kdNotenKatSpeichern('schriftlich')" style="flex:1;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:#fef3c7;color:#92400e;">+ Schriftlich</button>
+          <button onclick="kdNotenKatSpeichern('muendlich')" style="flex:1;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:#dbeafe;color:#1e40af;">+ ${kdHauptkatLabel(kdNotenFachFilter,'muendlich')}</button>
+          <button onclick="kdNotenKatSpeichern('schriftlich')" style="flex:1;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:#fef3c7;color:#92400e;">+ ${kdHauptkatLabel(kdNotenFachFilter,'schriftlich')}</button>
         </div>
       </div>
       <button onclick="kdNotenKatEditId=null;document.getElementById('kd-noten-kat-modal').remove();kdRenderNoten();" style="width:100%;margin-top:16px;padding:10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:white;color:var(--gray-600);">Schließen</button>
@@ -3863,6 +3897,8 @@ function applyEinstellungen(saved) {
   const gewichtung = { ...KD_NOTENGEWICHTUNG_DEFAULT, ...(saved.notengewichtung || {}) };
   document.getElementById('set-gewicht-muendlich').value = gewichtung.muendlich;
   document.getElementById('set-gewicht-schriftlich').value = gewichtung.schriftlich;
+
+  renderNotenFachOverrides(Object.values(saved.notenFachUeberschreibung || {}));
 }
 
 // Hält die beiden Gewichtungsfelder komplementär (Summe = 100)
@@ -3915,6 +3951,88 @@ function kdNotenEinstellungenZuruecksetzen() {
   autoSave();
 }
 
+// ── Fachspezifische Hauptkategorien (z.B. Sport: Sportliche Leistung/Mitarbeit) ──
+function renderNotenFachOverrides(list) {
+  const container = document.getElementById('noten-fach-overrides-liste');
+  if (!container) return;
+  const faecher = [...document.querySelectorAll('[data-fach]')].map(i => i.value.trim()).filter(Boolean);
+  if (!list || list.length === 0) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--gray-300);padding:6px 0;">Keine fachspezifischen Anpassungen</div>`;
+    return;
+  }
+  container.innerHTML = list.map(o => `
+    <div class="noten-fach-override-row" style="border:1px solid var(--gray-200);border-radius:8px;padding:10px;margin-bottom:8px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <select data-nfo-fach onchange="autoSave()" style="flex:1;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+          <option value="">– Fach wählen –</option>
+          ${faecher.map(f => `<option value="${f}" ${f===o.fach?'selected':''}>${f}</option>`).join('')}
+        </select>
+        <button onclick="this.closest('.noten-fach-override-row').remove(); autoSave();" style="background:none;border:none;color:var(--gray-300);cursor:pointer;font-size:14px;">🗑</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <input data-nfo-labelA value="${(o.labelMuendlich||'').replace(/"/g,'&quot;')}" placeholder="z.B. Sportliche Leistung" oninput="autoSave()" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+        <input data-nfo-labelB value="${(o.labelSchriftlich||'').replace(/"/g,'&quot;')}" placeholder="z.B. Mitarbeit" oninput="autoSave()" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <input type="number" min="0" max="100" data-nfo-gewA value="${o.gewichtMuendlich ?? 50}" oninput="kdNfoGewichtSync(this,'A'); autoSave();" style="width:60px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> % Kat. A
+        <input type="number" min="0" max="100" data-nfo-gewB value="${o.gewichtSchriftlich ?? 50}" oninput="kdNfoGewichtSync(this,'B'); autoSave();" style="width:60px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> % Kat. B
+      </div>
+    </div>
+  `).join('');
+}
+
+function kdNfoGewichtSync(el, which) {
+  const row = el.closest('.noten-fach-override-row');
+  let v = parseFloat(el.value); if (isNaN(v)) v = 0; v = Math.max(0, Math.min(100, v));
+  el.value = v;
+  const other = row.querySelector(which === 'A' ? '[data-nfo-gewB]' : '[data-nfo-gewA]');
+  if (other) other.value = 100 - v;
+}
+
+function kdNotenFachOverrideNeu() {
+  const container = document.getElementById('noten-fach-overrides-liste');
+  if (!container) return;
+  if (container.querySelector('div[style*="color:var(--gray-300)"]')) container.innerHTML = '';
+  const faecher = [...document.querySelectorAll('[data-fach]')].map(i => i.value.trim()).filter(Boolean);
+  const div = document.createElement('div');
+  div.className = 'noten-fach-override-row';
+  div.style.cssText = 'border:1px solid var(--gray-200);border-radius:8px;padding:10px;margin-bottom:8px;';
+  div.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <select data-nfo-fach onchange="autoSave()" style="flex:1;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+        <option value="">– Fach wählen –</option>
+        ${faecher.map(f => `<option value="${f}">${f}</option>`).join('')}
+      </select>
+      <button onclick="this.closest('.noten-fach-override-row').remove(); autoSave();" style="background:none;border:none;color:var(--gray-300);cursor:pointer;font-size:14px;">🗑</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <input data-nfo-labelA placeholder="z.B. Sportliche Leistung" oninput="autoSave()" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+      <input data-nfo-labelB placeholder="z.B. Mitarbeit" oninput="autoSave()" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+      <input type="number" min="0" max="100" data-nfo-gewA value="50" oninput="kdNfoGewichtSync(this,'A'); autoSave();" style="width:60px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> % Kat. A
+      <input type="number" min="0" max="100" data-nfo-gewB value="50" oninput="kdNfoGewichtSync(this,'B'); autoSave();" style="width:60px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> % Kat. B
+    </div>`;
+  container.appendChild(div);
+  autoSave();
+}
+
+function kdNotenFachOverridesAuslesen() {
+  const result = {};
+  [...document.querySelectorAll('.noten-fach-override-row')].forEach(row => {
+    const fach = row.querySelector('[data-nfo-fach]')?.value || '';
+    if (!fach) return;
+    result[fach] = {
+      fach,
+      labelMuendlich: row.querySelector('[data-nfo-labelA]')?.value.trim() || '',
+      labelSchriftlich: row.querySelector('[data-nfo-labelB]')?.value.trim() || '',
+      gewichtMuendlich: parseFloat(row.querySelector('[data-nfo-gewA]')?.value) || 50,
+      gewichtSchriftlich: parseFloat(row.querySelector('[data-nfo-gewB]')?.value) || 50,
+    };
+  });
+  return result;
+}
+
 async function loadEinstellungen() {
   const [{ data: einst }, { data: klassen }] = await Promise.all([
     sb.from('einstellungen').select('daten').eq('id', 1).single(),
@@ -3945,6 +4063,7 @@ async function saveEinstellungen() {
     muendlich: parseFloat(document.getElementById('set-gewicht-muendlich')?.value) || 0,
     schriftlich: parseFloat(document.getElementById('set-gewicht-schriftlich')?.value) || 0,
   };
+  const notenFachUeberschreibung = kdNotenFachOverridesAuslesen();
 
   const daten = {
     lehrername: document.getElementById('set-lehrername').value.trim(),
@@ -3962,11 +4081,13 @@ async function saveEinstellungen() {
     notenwerte,
     notenschluessel,
     notengewichtung,
+    notenFachUeberschreibung,
   };
   await sb.from('einstellungen').upsert({ id: 1, daten });
   KD_NOTE_MAP = { ...KD_NOTE_MAP_DEFAULT, ...notenwerte };
   KD_NOTENSCHLUESSEL_MIN = { ...KD_NOTENSCHLUESSEL_DEFAULT, ...notenschluessel };
   KD_NOTENGEWICHTUNG = { ...KD_NOTENGEWICHTUNG_DEFAULT, ...notengewichtung };
+  KD_NOTEN_FACH_OVERRIDES = notenFachUeberschreibung;
 }
 
 let _autoSaveTimer = null;
