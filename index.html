@@ -562,6 +562,7 @@
       <button data-kd-tab="checkliste" onclick="kdZeigeUnterseite('checkliste')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#dcfce7;color:#15803d;box-shadow:0 0 0 2px #86efac;">✅ Checkliste</button>
       <button data-kd-tab="unterricht" onclick="kdZeigeUnterseite('unterricht')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📚 Unterricht</button>
       <button data-kd-tab="anwesenheit" onclick="kdZeigeUnterseite('anwesenheit')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">👥 Anwesenheit</button>
+      <button data-kd-tab="hausaufgaben" onclick="kdZeigeUnterseite('hausaufgaben')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📝 Hausaufgaben</button>
     </div>
     <div id="kd-content"></div>
   </div>
@@ -1085,6 +1086,11 @@ let kdAnwAktStunde = null; // { kw, jahr, wochentag, stunde } – gewählte Stun
 let kdAnwAnsicht = 'erfassen'; // 'erfassen' | 'uebersicht'
 let kdAnwFachFilter = null; // Fach-Filter für Erfassen
 let kdAnwUebFachFilter = null; // Fach-Filter für Übersicht
+let kdHausaufgaben = []; // { id, schueler_id, kalenderwoche, jahr, wochentag, stunde, status }
+let kdHaAktStunde = null;
+let kdHaAnsicht = 'erfassen'; // 'erfassen' | 'uebersicht'
+let kdHaFachFilter = null;
+let kdHaUebFachFilter = null;
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
   // Aktuelle KW suchen, sonst nächste verfügbare
@@ -1110,6 +1116,10 @@ async function kdOeffneKlasse(klasseId) {
   kdAnwAnsicht = 'erfassen';
   kdAnwFachFilter = null;
   kdAnwUebFachFilter = null;
+  kdHaAktStunde = null;
+  kdHaAnsicht = 'erfassen';
+  kdHaFachFilter = null;
+  kdHaUebFachFilter = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht()]);
@@ -1128,6 +1138,7 @@ function kdZeigeUnterseite(seite) {
   if (seite === 'checkliste') kdRenderCheckliste();
   if (seite === 'unterricht') { kdLadeUnterricht().then(() => kdRenderUnterricht()); }
   if (seite === 'anwesenheit') { kdLadeAnwesenheit().then(() => kdRenderAnwesenheit()); }
+  if (seite === 'hausaufgaben') { kdLadeHausaufgaben().then(() => kdRenderHausaufgaben()); }
 }
 
 async function kdLadeCheckliste() {
@@ -1980,6 +1991,337 @@ function kdRenderAnwUebersicht(vergangenStunden) {
       <span><span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-weight:700;">E</span> Entschuldigt</span>
       <span><span style="background:#ede9fe;color:#5b21b6;padding:1px 7px;border-radius:10px;font-weight:700;">V</span> Verspätet</span>
       <span style="color:var(--gray-400);">% = Anwesenheitsquote (Verspätete zählen als anwesend)</span>
+    </div>`;
+  return html;
+}
+
+// ── Hausaufgaben-Tab ─────────────────────────────────────────────
+async function kdLadeHausaufgaben() {
+  const heute = new Date();
+  const sjJahr = heute.getMonth() >= 8 ? heute.getFullYear() : heute.getFullYear() - 1;
+  const { data, error } = await sb.from('hausaufgaben')
+    .select('*')
+    .eq('klasse_id', kdAktiveKlasseId)
+    .gte('jahr', sjJahr);
+  if (error) {
+    kdHausaufgaben = [];
+    if (error.code !== '42P01') console.warn('hausaufgaben load error:', error);
+    return;
+  }
+  kdHausaufgaben = data || [];
+}
+
+function kdHaSetAnsicht(a) { kdHaAnsicht = a; kdRenderHausaufgaben(); }
+function kdHaSetStunde(kw, jahr, wochentag, stunde) { kdHaAktStunde = { kw, jahr, wochentag, stunde }; kdRenderHausaufgaben(); }
+function kdHaSetFach(fach) { kdHaFachFilter = fach || null; kdHaAktStunde = null; kdRenderHausaufgaben(); }
+function kdHaSetUebFach(fach) { kdHaUebFachFilter = fach || null; kdRenderHausaufgaben(); }
+
+async function kdHaToggle(schuelerId) {
+  if (!kdHaAktStunde) return;
+  const { kw, jahr, wochentag, stunde } = kdHaAktStunde;
+  const states = ['vergessen', 'nachgereicht'];
+
+  // Doppelstunden-Partner ermitteln
+  const aktLesson = kdUnterricht.find(r =>
+    r.kalenderwoche === kw && r.jahr === jahr && r.wochentag === wochentag && r.stunde === stunde
+  );
+  const partnerStunde = (aktLesson?._isDoppelstunde && aktLesson?._doppelstundeEnde)
+    ? aktLesson._doppelstundeEnde : null;
+
+  async function setStatus(std, newStatus) {
+    const ex = kdHausaufgaben.find(a =>
+      a.schueler_id === schuelerId && a.kalenderwoche === kw && a.jahr === jahr &&
+      a.wochentag === wochentag && a.stunde === std
+    );
+    if (newStatus === null) {
+      if (ex) {
+        await sb.from('hausaufgaben').delete().eq('id', ex.id);
+        kdHausaufgaben = kdHausaufgaben.filter(a => a.id !== ex.id);
+      }
+    } else if (!ex) {
+      const { data, error } = await sb.from('hausaufgaben').insert({
+        schueler_id: schuelerId, klasse_id: kdAktiveKlasseId,
+        kalenderwoche: kw, jahr, wochentag, stunde: std, status: newStatus
+      }).select().single();
+      if (!error && data) kdHausaufgaben.push(data);
+    } else {
+      const { error } = await sb.from('hausaufgaben').update({ status: newStatus }).eq('id', ex.id);
+      if (!error) ex.status = newStatus;
+    }
+  }
+
+  const existing = kdHausaufgaben.find(a =>
+    a.schueler_id === schuelerId && a.kalenderwoche === kw && a.jahr === jahr &&
+    a.wochentag === wochentag && a.stunde === stunde
+  );
+  let newStatus;
+  if (!existing) newStatus = 'vergessen';
+  else { const i = states.indexOf(existing.status); newStatus = i >= states.length - 1 ? null : states[i + 1]; }
+
+  await setStatus(stunde, newStatus);
+  if (partnerStunde) await setStatus(partnerStunde, newStatus);
+  kdRenderHausaufgaben();
+}
+
+function kdRenderHausaufgaben() {
+  const container = document.getElementById('kd-content');
+  if (kdAktiveUnterseite !== 'hausaufgaben') return;
+
+  const heuteEnde = new Date(); heuteEnde.setUTCHours(23, 59, 59, 999);
+  const alleStunden = kdUnterricht.slice();
+
+  const tabBtnStyle = (a) => kdHaAnsicht === a
+    ? 'background:#1d4ed8;color:white;border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+    : 'background:transparent;color:var(--gray-500);border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;';
+
+  let html = `
+    <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;width:fit-content;margin-bottom:16px;">
+      <button onclick="kdHaSetAnsicht('erfassen')" style="${tabBtnStyle('erfassen')}">📝 Erfassen</button>
+      <button onclick="kdHaSetAnsicht('uebersicht')" style="${tabBtnStyle('uebersicht')}">📊 Übersicht</button>
+    </div>`;
+
+  html += kdHaAnsicht === 'erfassen'
+    ? kdRenderHaErfassen(alleStunden)
+    : kdRenderHaUebersicht(alleStunden);
+
+  container.innerHTML = html;
+}
+
+function kdRenderHaErfassen(alleStunden) {
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const heuteEnde = new Date(); heuteEnde.setUTCHours(23, 59, 59, 999);
+
+  if (alleStunden.length === 0) {
+    return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📝</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Stunden gefunden</div>
+      <div style="font-size:13px;line-height:1.7;">Weise dieser Klasse im Stundenplan Stunden zu –<br>sie erscheinen dann hier automatisch.</div>
+    </div>`;
+  }
+
+  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const gefiltertStunden = kdHaFachFilter
+    ? alleStunden.filter(r => (r.fach || r._spFach) === kdHaFachFilter)
+    : alleStunden;
+
+  // Zweite Stunden von Doppelstunden ausblenden
+  const dsPartnerKeys = new Set();
+  gefiltertStunden.forEach(r => {
+    if (r._isDoppelstunde && r._doppelstundeEnde)
+      dsPartnerKeys.add(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r._doppelstundeEnde}`);
+  });
+  const sichtbareStunden = gefiltertStunden.filter(r =>
+    !dsPartnerKeys.has(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
+  );
+
+  if (!kdHaAktStunde && sichtbareStunden.length > 0) {
+    const f = sichtbareStunden[0];
+    kdHaAktStunde = { kw: f.kalenderwoche, jahr: f.jahr, wochentag: f.wochentag, stunde: f.stunde };
+  }
+  const aktKey = kdHaAktStunde
+    ? `${kdHaAktStunde.kw}-${kdHaAktStunde.jahr}-${kdHaAktStunde.wochentag}-${kdHaAktStunde.stunde}` : '';
+
+  const chipStyle = (f) => f === kdHaFachFilter
+    ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;'
+    : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
+
+  let html = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Fach:</span>
+      <button onclick="kdHaSetFach(null)" style="${chipStyle(null)}padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">Alle</button>
+      ${alleFaecher.map(f => `<button onclick="kdHaSetFach('${f.replace(/'/g,"\\'")}') " style="${chipStyle(f)}padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">${f}</button>`).join('')}
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Unterrichtsstunde wählen:</label>
+      ${sichtbareStunden.length === 0
+        ? `<div style="font-size:13px;color:var(--gray-400);padding:8px 0;">Keine Stunden für dieses Fach gefunden.</div>`
+        : `<select onchange="(function(v){const p=v.split('-');kdHaSetStunde(+p[0],+p[1],+p[2],+p[3]);})(this.value)"
+            style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--gray-200);font-size:13px;background:white;cursor:pointer;width:100%;max-width:400px;">
+            ${sichtbareStunden.map(r => {
+              const rKey = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+              const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+              const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+              const fachLabel = (r.fach||r._spFach) ? ` · ${r.fach||r._spFach}` : '';
+              const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std.` : `${r.stunde}. Std.`;
+              const zukunftLabel = datum > heuteEnde ? ' 📅' : '';
+              return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${stdLabel}${fachLabel}${zukunftLabel}</option>`;
+            }).join('')}
+          </select>`
+      }
+    </div>`;
+
+  if (kdSchueler.length === 0)
+    return html + `<div style="text-align:center;padding:30px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
+
+  // Status-Map für gewählte Stunde
+  const haMap = {};
+  if (kdHaAktStunde) {
+    kdHausaufgaben.forEach(a => {
+      if (a.kalenderwoche === kdHaAktStunde.kw && a.jahr === kdHaAktStunde.jahr &&
+          a.wochentag === kdHaAktStunde.wochentag && a.stunde === kdHaAktStunde.stunde)
+        haMap[a.schueler_id] = a.status;
+    });
+  }
+
+  const statusCfg = {
+    erledigt:     { label:'✓ Erledigt',      bg:'#dcfce7', color:'#15803d', border:'#86efac' },
+    vergessen:    { label:'✗ Vergessen',      bg:'#fee2e2', color:'#991b1b', border:'#fca5a5' },
+    nachgereicht: { label:'↩ Nachgereicht',   bg:'#fef3c7', color:'#92400e', border:'#fcd34d' },
+  };
+
+  const vergessen    = Object.values(haMap).filter(s => s === 'vergessen').length;
+  const nachgereicht = Object.values(haMap).filter(s => s === 'nachgereicht').length;
+  const erledigt     = kdSchueler.length - vergessen - nachgereicht;
+
+  html += `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span style="background:#dcfce7;color:#15803d;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">✓ ${erledigt} Erledigt</span>
+      ${vergessen    ? `<span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">✗ ${vergessen} Vergessen</span>` : ''}
+      ${nachgereicht ? `<span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">↩ ${nachgereicht} Nachgereicht</span>` : ''}
+    </div>
+    <div style="background:white;border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;">`;
+
+  kdSchueler.forEach((s, idx) => {
+    const status = haMap[s.id] || 'erledigt';
+    const cfg = statusCfg[status];
+    const borderTop = idx > 0 ? 'border-top:1px solid var(--gray-100);' : '';
+    html += `
+      <div style="display:flex;align-items:center;padding:10px 14px;${borderTop}gap:12px;">
+        <div style="flex:1;font-size:13px;font-weight:600;color:var(--gray-800);">${s.nachname}, ${s.vorname}</div>
+        <button onclick="kdHaToggle('${s.id}')"
+          style="background:${cfg.bg};color:${cfg.color};border:1.5px solid ${cfg.border};padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:150px;text-align:center;">
+          ${cfg.label}
+        </button>
+      </div>`;
+  });
+
+  html += `</div>
+    <div style="margin-top:10px;font-size:11px;color:var(--gray-400);text-align:center;">
+      Tippe auf den Status um ihn zu ändern: Erledigt → Vergessen → Nachgereicht → Erledigt
+    </div>`;
+  return html;
+}
+
+function kdRenderHaUebersicht(alleStunden) {
+  if (kdSchueler.length === 0)
+    return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
+
+  // Fach-Filter
+  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  let html = '';
+  if (alleFaecher.length > 1) {
+    const chipStyle = (f) => f === kdHaUebFachFilter
+      ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
+      : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
+    html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Fach:</span>
+      <button onclick="kdHaSetUebFach(null)" style="${chipStyle(null)}">Alle</button>
+      ${alleFaecher.map(f => `<button onclick="kdHaSetUebFach('${f.replace(/'/g,"\\'")}') " style="${chipStyle(f)}">${f}</button>`).join('')}
+    </div>`;
+  }
+
+  const gefiltert = kdHaUebFachFilter
+    ? alleStunden.filter(r => (r.fach || r._spFach) === kdHaUebFachFilter)
+    : alleStunden;
+
+  if (gefiltert.length === 0)
+    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für dieses Fach gefunden.</div>`;
+
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+
+  // Doppelstunden-Spalten zusammenführen
+  const dsPartnerKeysUeb = new Set();
+  gefiltert.forEach(r => {
+    if (r._isDoppelstunde && r._doppelstundeEnde)
+      dsPartnerKeysUeb.add(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r._doppelstundeEnde}`);
+  });
+  const tabellenSpalten = gefiltert.filter(r =>
+    !dsPartnerKeysUeb.has(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
+  );
+
+  // Nur vergangene Stunden für Statistik
+  const jetzt = new Date(); jetzt.setUTCHours(23, 59, 59, 999);
+  const vergangeneGefiltert = gefiltert.filter(r => kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag) <= jetzt);
+
+  // Lookup
+  const haLookup = {};
+  kdHausaufgaben.forEach(a => {
+    haLookup[`${a.schueler_id}-${a.kalenderwoche}-${a.jahr}-${a.wochentag}-${a.stunde}`] = a.status;
+  });
+
+  // Zusammenfassung pro Schüler
+  const sum = {};
+  kdSchueler.forEach(s => { sum[s.id] = { vergessen: 0, nachgereicht: 0, gesamt: vergangeneGefiltert.length }; });
+  vergangeneGefiltert.forEach(r => {
+    kdSchueler.forEach(s => {
+      const status = haLookup[`${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`];
+      if (status && sum[s.id]) sum[s.id][status] = (sum[s.id][status] || 0) + 1;
+    });
+  });
+
+  const statusKurz = {
+    vergessen:    { text:'V', bg:'#fee2e2', color:'#991b1b', title:'Vergessen' },
+    nachgereicht: { text:'N', bg:'#fef3c7', color:'#92400e', title:'Nachgereicht' },
+  };
+
+  html += `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);">
+    <table style="border-collapse:collapse;min-width:max-content;width:100%;">
+      <thead><tr>
+        <th style="position:sticky;left:0;z-index:2;background:var(--gray-800);color:white;padding:8px 14px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;min-width:190px;">Schüler/in</th>
+        ${tabellenSpalten.map(r => {
+          const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+          const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
+          const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
+          return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;" title="${r.fach||r._spFach||''}">
+            <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
+            <div style="opacity:0.7;">${datumStr}</div>
+            <div style="opacity:0.5;">${stdLabel}</div>
+          </th>`;
+        }).join('')}
+      </tr></thead>
+      <tbody>`;
+
+  kdSchueler.forEach((s, idx) => {
+    const rowBg = idx % 2 === 0 ? 'white' : '#fafafa';
+    const st = sum[s.id];
+    const vergessen    = st.vergessen;
+    const nachgereicht = st.nachgereicht;
+    const totalHA      = st.gesamt;
+    // HA-Quote: nachgereicht zählt als "letztendlich erledigt"
+    const haQuote = totalHA > 0
+      ? Math.round((totalHA - vergessen) / totalHA * 100)
+      : 100;
+    const quoteColor = haQuote >= 90 ? '#15803d' : haQuote >= 75 ? '#b45309' : '#991b1b';
+
+    const badges = [
+      vergessen    ? `<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Vergessen">${vergessen}×V</span>` : '',
+      nachgereicht ? `<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Nachgereicht">${nachgereicht}×N</span>` : '',
+      `<span style="color:${quoteColor};font-size:10px;font-weight:700;" title="HA-Quote">${haQuote}%</span>`,
+    ].filter(Boolean).join(' ');
+
+    html += `<tr>
+      <td style="position:sticky;left:0;z-index:1;background:${rowBg};padding:7px 14px;border-bottom:1px solid var(--gray-100);">
+        <div style="font-size:12px;font-weight:600;color:var(--gray-800);white-space:nowrap;">${s.nachname}, ${s.vorname}</div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;">
+          ${(vergessen || nachgereicht) ? badges : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
+        </div>
+      </td>
+      ${tabellenSpalten.map(r => {
+        const status = haLookup[`${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`];
+        if (!status) return `<td style="background:${rowBg};border-bottom:1px solid var(--gray-100);"></td>`;
+        const cfg = statusKurz[status];
+        return `<td style="background:${cfg.bg};border-bottom:1px solid var(--gray-100);text-align:center;" title="${cfg.title}">
+          <span style="color:${cfg.color};font-size:11px;font-weight:700;">${cfg.text}</span>
+        </td>`;
+      }).join('')}
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>
+    <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--gray-500);">
+      <span><span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:10px;font-weight:700;">V</span> Vergessen</span>
+      <span><span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-weight:700;">N</span> Nachgereicht</span>
+      <span style="color:var(--gray-400);">% = HA-Quote (Nachgereichte zählen als vergessen)</span>
     </div>`;
   return html;
 }
