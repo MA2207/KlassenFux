@@ -3288,6 +3288,12 @@ function kdNotenNaechsterCode(dez) {
   return bester;
 }
 
+// Rundet auf eine ganze Note (1–6) für die erteilte Zeugnisnote (nur zur Darstellung, nicht zur Berechnung)
+function kdNotenGanzeNote(dez) {
+  if (dez == null || isNaN(dez)) return null;
+  return String(Math.min(6, Math.max(1, Math.round(dez))));
+}
+
 function kdRenderNotenUebersicht() {
   const faecher = kdNotenKlassenFaecher();
   if (faecher.length === 0) {
@@ -3355,9 +3361,16 @@ function kdRenderNotenUebersicht() {
   const blockSpalten = (b, eingeklappt) => eingeklappt ? 1 : (b.subgroups.reduce((s, sg) => s + sg.entries.length + 1, 0) + (b.hatUnterkat ? 1 : 0));
   const istEingeklappt = (hj, hkName) => kdNotenUebKollabiert.has(hj + '::' + hkName);
 
-  let kopf1 = `<th rowspan="4" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Nr.</th>
-    <th rowspan="4" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Nachname</th>
-    <th rowspan="4" style="background:var(--gray-100);padding:6px 10px;font-size:12px;">Vorname</th>`;
+  // Sticky-Offsets: 4 Kopfzeilen (top) + 3 fixierte Spalten Nr./Nachname/Vorname (left)
+  const T = [0, 40, 74, 102];
+  const L = [0, 34, 144];
+  const SPALTEN_BREITE = [34, 110, 95];
+  const stickyTop = (row, extra) => `position:sticky;top:${T[row]}px;z-index:3;${extra || ''}`;
+  const stickyEcke = (left, extra) => `position:sticky;top:0;left:${left}px;z-index:6;${extra || ''}`;
+
+  let kopf1 = `<th rowspan="4" style="${stickyEcke(L[0], `width:${SPALTEN_BREITE[0]}px;background:var(--gray-100);padding:8px 10px;font-size:12px;border-top-left-radius:12px;`)}">Nr.</th>
+    <th rowspan="4" style="${stickyEcke(L[1], `width:${SPALTEN_BREITE[1]}px;background:var(--gray-100);padding:8px 10px;font-size:12px;`)}">Nachname</th>
+    <th rowspan="4" style="${stickyEcke(L[2], `width:${SPALTEN_BREITE[2]}px;background:var(--gray-100);padding:8px 10px;font-size:12px;box-shadow:3px 0 6px -3px rgba(0,0,0,0.15);`)}">Vorname</th>`;
   let kopf2 = '';
   let kopf3 = '';
   let kopf4 = '';
@@ -3365,51 +3378,53 @@ function kdRenderNotenUebersicht() {
   [1, 2].forEach(hj => {
     const blocks = hj === 1 ? blocksHj1 : blocksHj2;
     const spaltenGesamt = blocks.reduce((s, b) => s + blockSpalten(b, istEingeklappt(hj, b.hk.name)), 0) + 3; // +1 HJ-Mittelwert, +1 errechnete Zeugnisnote, +1 erteilte Zeugnisnote
-    kopf1 += `<th colspan="${spaltenGesamt}" style="background:${HJ_FARBE[hj]};padding:8px;font-size:14px;">${HJ_LABEL[hj]}</th>`;
+    kopf1 += `<th colspan="${spaltenGesamt}" style="${stickyTop(0, `background:${HJ_FARBE[hj]};padding:10px 8px;font-size:14px;`)}">${HJ_LABEL[hj]}</th>`;
 
     blocks.forEach(b => {
       const eingeklappt = istEingeklappt(hj, b.hk.name);
       const icon = eingeklappt ? '▸' : '▾';
-      kopf2 += `<th colspan="${blockSpalten(b, eingeklappt)}" rowspan="${eingeklappt ? 3 : 1}" onclick="kdNotenUebToggleBlock(${hj},'${b.hk.name.replace(/'/g, "\\'")}')" title="Ein-/Ausklappen" style="background:${b.hk.farbe || '#fde68a'};padding:6px;font-size:12px;color:white;cursor:pointer;">${icon} ${b.hk.name}</th>`;
+      kopf2 += `<th colspan="${blockSpalten(b, eingeklappt)}" rowspan="${eingeklappt ? 3 : 1}" onclick="kdNotenUebToggleBlock(${hj},'${b.hk.name.replace(/'/g, "\\'")}')" title="Ein-/Ausklappen"
+        style="${stickyTop(1, `background:${b.hk.farbe || '#fde68a'};padding:7px 6px;font-size:12px;color:white;cursor:pointer;border-radius:6px 6px 0 0;`)}">${icon} ${b.hk.name}</th>`;
       if (eingeklappt) return;
       if (b.hatUnterkat) {
         b.subgroups.forEach(sg => {
-          kopf3 += `<th colspan="${sg.entries.length + 1}" style="background:var(--gray-100);padding:4px 6px;font-size:10px;font-weight:600;color:var(--gray-600);">${sg.name}</th>`;
+          kopf3 += `<th colspan="${sg.entries.length + 1}" style="${stickyTop(2, `background:var(--gray-100);padding:5px 6px;font-size:10px;font-weight:600;color:var(--gray-600);`)}">${sg.name}</th>`;
           sg.entries.forEach(e => {
-            kopf4 += `<th style="background:var(--gray-50,#f9fafb);padding:5px 6px;font-size:11px;font-weight:600;" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzel(e.titel)}</th>`;
+            kopf4 += `<th style="${stickyTop(3, `background:var(--gray-50,#f9fafb);padding:6px;font-size:11px;font-weight:600;`)}" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzel(e.titel)}</th>`;
           });
-          kopf4 += `<th style="background:var(--gray-200);padding:5px 6px;font-size:11px;font-weight:700;">Ø</th>`;
+          kopf4 += `<th style="${stickyTop(3, `background:var(--gray-200);padding:6px;font-size:11px;font-weight:700;`)}">Ø</th>`;
         });
-        kopf3 += `<th rowspan="2" style="background:var(--gray-200);padding:5px 6px;font-size:11px;font-weight:700;">Mittelwert</th>`;
+        kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-200);padding:6px;font-size:11px;font-weight:700;`)}">Mittelwert</th>`;
       } else {
         b.subgroups[0].entries.forEach(e => {
-          kopf3 += `<th rowspan="2" style="background:var(--gray-50,#f9fafb);padding:5px 6px;font-size:11px;font-weight:600;" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzel(e.titel)}</th>`;
+          kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-50,#f9fafb);padding:6px;font-size:11px;font-weight:600;`)}" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzel(e.titel)}</th>`;
         });
-        kopf3 += `<th rowspan="2" style="background:var(--gray-200);padding:5px 6px;font-size:11px;font-weight:700;">Mittelwert</th>`;
+        kopf3 += `<th rowspan="2" style="${stickyTop(2, `background:var(--gray-200);padding:6px;font-size:11px;font-weight:700;`)}">Mittelwert</th>`;
       }
     });
 
-    kopf2 += `<th rowspan="3" style="background:${HJ_FARBE[hj]};padding:6px;font-size:12px;font-weight:700;">${HJ_LABEL[hj]}</th>`;
-    kopf2 += `<th rowspan="3" style="background:${HJ_FARBE[hj]};padding:6px;font-size:11px;font-weight:700;">errechnete<br>Zeugnisnote ${hj}. Hj</th>`;
-    kopf2 += `<th rowspan="3" style="background:${HJ_FARBE[hj]};padding:6px;font-size:11px;font-weight:700;">erteilte<br>Zeugnisnote ${hj}. Hj</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:7px 6px;font-size:12px;font-weight:700;`)}">${HJ_LABEL[hj]}</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:7px 6px;font-size:11px;font-weight:700;`)}">errechnete<br>Zeugnisnote ${hj}. Hj</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:7px 6px;font-size:11px;font-weight:700;${hj === 2 ? 'border-top-right-radius:12px;' : ''}`)}">erteilte<br>Zeugnisnote ${hj}. Hj</th>`;
   });
 
-  html += `<div style="overflow-x:auto;">
-    <table style="border-collapse:collapse;width:100%;">
-      <thead>
-        <tr>${kopf1}</tr>
-        <tr>${kopf2}</tr>
-        <tr>${kopf3}</tr>
-        <tr>${kopf4}</tr>
-      </thead>
-      <tbody>`;
+  html += `<div style="border-radius:14px;overflow:hidden;border:1px solid var(--gray-200);box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <div style="overflow:auto;max-height:72vh;">
+      <table style="border-collapse:separate;border-spacing:0;width:100%;">
+        <thead>
+          <tr>${kopf1}</tr>
+          <tr>${kopf2}</tr>
+          <tr>${kopf3}</tr>
+          <tr>${kopf4}</tr>
+        </thead>
+        <tbody>`;
 
   kdSchueler.forEach((s, idx) => {
-    const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50, #f9fafb)';
+    const rowBg = idx % 2 === 0 ? 'var(--white)' : '#f8fafc';
     html += `<tr style="background:${rowBg};">
-      <td style="padding:5px 10px;font-size:12px;color:var(--gray-500);border-top:1px solid var(--gray-100);">${idx + 1}</td>
-      <td style="padding:5px 10px;font-size:12px;font-weight:600;border-top:1px solid var(--gray-100);">${s.nachname}</td>
-      <td style="padding:5px 10px;font-size:12px;border-top:1px solid var(--gray-100);">${s.vorname}</td>`;
+      <td style="position:sticky;left:${L[0]}px;z-index:1;width:${SPALTEN_BREITE[0]}px;padding:6px 10px;font-size:12px;color:var(--gray-500);background:${rowBg};border-top:1px solid var(--gray-100);">${idx + 1}</td>
+      <td style="position:sticky;left:${L[1]}px;z-index:1;width:${SPALTEN_BREITE[1]}px;padding:6px 10px;font-size:12px;font-weight:600;background:${rowBg};border-top:1px solid var(--gray-100);">${s.nachname}</td>
+      <td style="position:sticky;left:${L[2]}px;z-index:1;width:${SPALTEN_BREITE[2]}px;padding:6px 10px;font-size:12px;background:${rowBg};border-top:1px solid var(--gray-100);box-shadow:3px 0 6px -3px rgba(0,0,0,0.1);">${s.vorname}</td>`;
 
     let hj1Mw = null, hj2Mw = null;
 
@@ -3442,12 +3457,12 @@ function kdRenderNotenUebersicht() {
       html += `<td style="padding:6px 8px;text-align:center;font-size:13px;font-weight:700;border-top:1px solid var(--gray-100);background:${HJ_FARBE[hj]}55;color:var(--gray-800);">${zeugnisCode || '–'}</td>`;
 
       const erteilt = kdNotenErteilteNote(kdNotenUebFach, s.id, hj);
-      const auswahlWert = erteilt || zeugnisCode || '';
+      const auswahlWert = erteilt || kdNotenGanzeNote(zeugnisDez) || '';
       html += `<td style="padding:4px 6px;text-align:center;border-top:1px solid var(--gray-100);background:${HJ_FARBE[hj]}22;">
         <select onchange="kdNotenErteilteNoteSpeichern('${kdNotenUebFach.replace(/'/g, "\\'")}','${s.id}',${hj},this.value)"
-          style="width:64px;padding:3px 4px;border:1px solid var(--gray-200);border-radius:4px;font-size:12px;font-weight:700;text-align:center;">
+          style="width:52px;padding:3px 4px;border:1px solid var(--gray-200);border-radius:6px;font-size:12px;font-weight:700;text-align:center;">
           <option value="">–</option>
-          ${KD_NOTEN_CODES.map(code => `<option value="${code}" ${code === auswahlWert ? 'selected' : ''}>${code}</option>`).join('')}
+          ${['1', '2', '3', '4', '5', '6'].map(note => `<option value="${note}" ${note === auswahlWert ? 'selected' : ''}>${note}</option>`).join('')}
         </select>
       </td>`;
     });
@@ -3455,7 +3470,7 @@ function kdRenderNotenUebersicht() {
     html += `</tr>`;
   });
 
-  html += `</tbody></table></div>`;
+  html += `</tbody></table></div></div>`;
   return html;
 }
 
