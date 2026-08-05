@@ -2824,6 +2824,22 @@ function kdNotenProzentZuNote(prozent, schluesselIndex) {
   return KD_NOTEN_CODES[KD_NOTEN_CODES.length - 1];
 }
 
+// Ermittelt anhand der in den Einstellungen hinterlegten HJ-Zeiträume, zu welchem Halbjahr ein Datum gehört
+function kdNotenHjFuerDatum(datum) {
+  if (!datum) return 1;
+  const { hj1_start, hj1_ende, hj2_start, hj2_ende } = kdNotenEinst;
+  if (hj2_start && datum >= hj2_start && (!hj2_ende || datum <= hj2_ende)) return 2;
+  if (hj1_start && datum >= hj1_start && (!hj1_ende || datum <= hj1_ende)) return 1;
+  // Fallback ohne konfigurierte Zeiträume: Schuljahr Aug–Jul, 1. HJ bis Ende Januar
+  const monat = parseInt(datum.slice(5, 7), 10);
+  return (monat >= 2 && monat <= 7) ? 2 : 1;
+}
+
+function kdNotenDatumGeaendert(datum) {
+  const sel = document.getElementById('ne-halbjahr');
+  if (sel) sel.value = kdNotenHjFuerDatum(datum);
+}
+
 function kdNotenSetAnsicht(a) { kdNotenAnsicht = a; kdNotenAktEintragId = null; kdNotenMaskeOffen = false; kdRenderNoten(); }
 function kdNotenSetFach(fach) { kdNotenFach = fach || null; kdNotenHauptkat = null; kdNotenUnterkat = null; kdRenderNoten(); }
 function kdNotenSetHauptkat(name) { kdNotenHauptkat = name || null; kdNotenUnterkat = null; kdRenderNoten(); }
@@ -2895,6 +2911,8 @@ async function kdNotenEintragSpeichern() {
   const datum = document.getElementById('ne-datum')?.value || new Date().toISOString().slice(0, 10);
   const eingabeart = kdNotenEingabeart;
 
+  const halbjahr = parseInt(document.getElementById('ne-halbjahr')?.value) || kdNotenHjFuerDatum(datum);
+
   const eintragDaten = {
     klasse_id: kdAktiveKlasseId,
     fach: kdNotenFach,
@@ -2902,6 +2920,7 @@ async function kdNotenEintragSpeichern() {
     unterkategorie: kdNotenUnterkat || null,
     titel,
     datum,
+    halbjahr,
     eingabeart,
     gesamtpunktzahl: null,
     notenschluessel_index: null,
@@ -3005,6 +3024,7 @@ function kdRenderNotenEingabe() {
 
   const titelVal = bearbeiteterEintrag ? (bearbeiteterEintrag.titel || '') : '';
   const datumVal = bearbeiteterEintrag ? (bearbeiteterEintrag.datum || '') : new Date().toISOString().slice(0, 10);
+  const halbjahrVal = bearbeiteterEintrag?.halbjahr || kdNotenHjFuerDatum(datumVal);
   const gesamtpunktzahlVal = bearbeiteterEintrag?.gesamtpunktzahl ?? '';
   const schluesselListe = kdNotenSchluesselListe();
 
@@ -3044,7 +3064,14 @@ function kdRenderNotenEingabe() {
     </div>
     <div class="form-group" style="margin-bottom:0;">
       <label class="form-label">Datum</label>
-      <input class="form-input" type="date" id="ne-datum" value="${datumVal}">
+      <input class="form-input" type="date" id="ne-datum" value="${datumVal}" oninput="kdNotenDatumGeaendert(this.value)">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Halbjahr</label>
+      <select class="form-select" id="ne-halbjahr" style="width:130px;">
+        <option value="1" ${halbjahrVal === 1 ? 'selected' : ''}>1. Halbjahr</option>
+        <option value="2" ${halbjahrVal === 2 ? 'selected' : ''}>2. Halbjahr</option>
+      </select>
     </div>
   </div>`;
 
