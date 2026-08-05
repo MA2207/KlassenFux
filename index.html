@@ -1092,6 +1092,9 @@ let kdHaAktStunde = null;
 let kdHaAnsicht = 'erfassen'; // 'erfassen' | 'uebersicht'
 let kdHaFachFilter = null;
 let kdHaUebFachFilter = null;
+let kdAnwUebHjFilter = null;  // null=Alle, 1=1.HJ, 2=2.HJ
+let kdHaUebHjFilter  = null;
+let kdUbUebHjFilter  = null;
 let kdUb = [];
 let kdUbAktStunde = null;
 let kdUbAnsicht = 'erfassen';
@@ -1122,14 +1125,17 @@ async function kdOeffneKlasse(klasseId) {
   kdAnwAnsicht = 'erfassen';
   kdAnwFachFilter = null;
   kdAnwUebFachFilter = null;
+  kdAnwUebHjFilter = null;
   kdHaAktStunde = null;
   kdHaAnsicht = 'erfassen';
   kdHaFachFilter = null;
   kdHaUebFachFilter = null;
+  kdHaUebHjFilter = null;
   kdUbAktStunde = null;
   kdUbAnsicht = 'erfassen';
   kdUbFachFilter = null;
   kdUbUebFachFilter = null;
+  kdUbUebHjFilter = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung()]);
@@ -1640,6 +1646,18 @@ function kdAnwSetUebFach(fach) {
   kdAnwUebFachFilter = fach || null;
   kdRenderAnwesenheit();
 }
+function kdAnwSetUebHj(hj) { kdAnwUebHjFilter = hj; kdRenderAnwesenheit(); }
+function kdHaSetUebHj(hj)  { kdHaUebHjFilter  = hj; kdRenderHausaufgaben(); }
+function kdUbSetUebHj(hj)  { kdUbUebHjFilter  = hj; kdRenderBeobachtung(); }
+
+// Globale HJ-Hilfsfunktion – gibt 1, 2 oder 0 zurück
+function kdHjFuerLesson(r) {
+  const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+  const ds = datum.toISOString().slice(0, 10);
+  if (kdHj1Start && kdHj1Ende && ds >= kdHj1Start && ds <= kdHj1Ende) return 1;
+  if (kdHj2Start && kdHj2Ende && ds >= kdHj2Start && ds <= kdHj2Ende) return 2;
+  return 0;
+}
 function kdAnwSetFach(fach) {
   kdAnwFachFilter = fach || null;
   kdAnwAktStunde = null; // Auswahl zurücksetzen, damit erste Stunde des Fachs vorausgewählt wird
@@ -1874,7 +1892,18 @@ function kdRenderAnwUebersicht(vergangenStunden) {
 
   // ── Fach-Filter ──────────────────────────────────────────────────
   const alleFaecher = [...new Set(vergangenStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
-  let html = '';
+  const hjChipStyle = (hj) => hj === kdAnwUebHjFilter
+    ? (hj === 1 ? 'background:#1e40af;color:white;border:2px solid #1e40af;' : hj === 2 ? 'background:#92400e;color:white;border:2px solid #92400e;' : 'background:#374151;color:white;border:2px solid #374151;')
+    : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
+  const hjBtnBase = 'padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
+
+  let html = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+    <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Halbjahr:</span>
+    <button onclick="kdAnwSetUebHj(null)" style="${hjChipStyle(null)}${hjBtnBase}">Alle</button>
+    <button onclick="kdAnwSetUebHj(1)" style="${hjChipStyle(1)}${hjBtnBase}">1. Halbjahr</button>
+    <button onclick="kdAnwSetUebHj(2)" style="${hjChipStyle(2)}${hjBtnBase}">2. Halbjahr</button>
+  </div>`;
+
   if (alleFaecher.length > 1) {
     const chipStyle = (f) => f === kdAnwUebFachFilter
       ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
@@ -1886,15 +1915,17 @@ function kdRenderAnwUebersicht(vergangenStunden) {
     </div>`;
   }
 
-  const gefiltert = kdAnwUebFachFilter
+  let gefiltert = kdAnwUebFachFilter
     ? vergangenStunden.filter(r => (r.fach || r._spFach) === kdAnwUebFachFilter)
     : vergangenStunden;
+  if (kdAnwUebHjFilter) gefiltert = gefiltert.filter(r => kdHjFuerLesson(r) === kdAnwUebHjFilter);
 
   if (gefiltert.length === 0) {
-    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für dieses Fach gefunden.</div>`;
+    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für diesen Filter gefunden.</div>`;
   }
 
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const hjThBg = { 1: '#1e3a8a', 2: '#78350f', 0: '#1f2937' };
 
   // Doppelstunden-Partner-Keys (für Tabellenansicht zusammenführen)
   const dsPartnerKeysUeb = new Set();
@@ -1947,7 +1978,9 @@ function kdRenderAnwUebersicht(vergangenStunden) {
             const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
             const fach = r.fach || r._spFach;
             const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
-            return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''}">
+            const hj = kdHjFuerLesson(r);
+            const thBg = hjThBg[hj] || hjThBg[0];
+            return `<th style="background:${thBg};color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''} · ${hj?hj+'.HJ':''}">
               <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
               <div style="opacity:0.7;">${datumStr}</div>
               <div style="opacity:0.5;">${stdLabel}</div>
@@ -2218,7 +2251,16 @@ function kdRenderHaUebersicht(alleStunden) {
 
   // Fach-Filter
   const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
-  let html = '';
+  const hjChipStyleHa = (hj) => hj === kdHaUebHjFilter
+    ? (hj === 1 ? 'background:#1e40af;color:white;border:2px solid #1e40af;' : hj === 2 ? 'background:#92400e;color:white;border:2px solid #92400e;' : 'background:#374151;color:white;border:2px solid #374151;')
+    : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
+  const hjBtnBase = 'padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
+  let html = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+    <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Halbjahr:</span>
+    <button onclick="kdHaSetUebHj(null)" style="${hjChipStyleHa(null)}${hjBtnBase}">Alle</button>
+    <button onclick="kdHaSetUebHj(1)" style="${hjChipStyleHa(1)}${hjBtnBase}">1. Halbjahr</button>
+    <button onclick="kdHaSetUebHj(2)" style="${hjChipStyleHa(2)}${hjBtnBase}">2. Halbjahr</button>
+  </div>`;
   if (alleFaecher.length > 1) {
     const chipStyle = (f) => f === kdHaUebFachFilter
       ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
@@ -2230,14 +2272,16 @@ function kdRenderHaUebersicht(alleStunden) {
     </div>`;
   }
 
-  const gefiltert = kdHaUebFachFilter
+  let gefiltert = kdHaUebFachFilter
     ? alleStunden.filter(r => (r.fach || r._spFach) === kdHaUebFachFilter)
     : alleStunden;
+  if (kdHaUebHjFilter) gefiltert = gefiltert.filter(r => kdHjFuerLesson(r) === kdHaUebHjFilter);
 
   if (gefiltert.length === 0)
-    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für dieses Fach gefunden.</div>`;
+    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für diesen Filter gefunden.</div>`;
 
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const hjThBgHa = { 1: '#1e3a8a', 2: '#78350f', 0: '#1f2937' };
 
   // Doppelstunden-Spalten zusammenführen
   const dsPartnerKeysUeb = new Set();
@@ -2283,7 +2327,9 @@ function kdRenderHaUebersicht(alleStunden) {
           const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
           const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
           const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
-          return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;" title="${r.fach||r._spFach||''}">
+          const hj = kdHjFuerLesson(r);
+          const thBg = hjThBgHa[hj] || hjThBgHa[0];
+          return `<th style="background:${thBg};color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;" title="${r.fach||r._spFach||''} · ${hj?hj+'.HJ':''}">
             <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
             <div style="opacity:0.7;">${datumStr}</div>
             <div style="opacity:0.5;">${stdLabel}</div>
@@ -2543,7 +2589,16 @@ function kdRenderUbUebersicht(alleStunden) {
     return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
 
   const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
-  let html = '';
+  const hjChipStyleUb = (hj) => hj === kdUbUebHjFilter
+    ? (hj === 1 ? 'background:#1e40af;color:white;border:2px solid #1e40af;' : hj === 2 ? 'background:#92400e;color:white;border:2px solid #92400e;' : 'background:#374151;color:white;border:2px solid #374151;')
+    : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
+  const hjBtnBase = 'padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
+  let html = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+    <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap;">Halbjahr:</span>
+    <button onclick="kdUbSetUebHj(null)" style="${hjChipStyleUb(null)}${hjBtnBase}">Alle</button>
+    <button onclick="kdUbSetUebHj(1)" style="${hjChipStyleUb(1)}${hjBtnBase}">1. Halbjahr</button>
+    <button onclick="kdUbSetUebHj(2)" style="${hjChipStyleUb(2)}${hjBtnBase}">2. Halbjahr</button>
+  </div>`;
   if (alleFaecher.length > 1) {
     const chipStyle = (f) => f === kdUbUebFachFilter
       ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
@@ -2555,14 +2610,16 @@ function kdRenderUbUebersicht(alleStunden) {
     </div>`;
   }
 
-  const gefiltert = kdUbUebFachFilter
+  let gefiltert = kdUbUebFachFilter
     ? alleStunden.filter(r => (r.fach || r._spFach) === kdUbUebFachFilter)
     : alleStunden;
+  if (kdUbUebHjFilter) gefiltert = gefiltert.filter(r => kdHjFuerLesson(r) === kdUbUebHjFilter);
 
   if (gefiltert.length === 0)
-    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für dieses Fach gefunden.</div>`;
+    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für diesen Filter gefunden.</div>`;
 
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const hjThBgUb = { 1: '#1e3a8a', 2: '#78350f', 0: '#1f2937' };
 
   // Doppelstunden-Partner für Tabellenspalten zusammenführen
   const dsPartnerKeysUeb = new Set();
@@ -2610,7 +2667,9 @@ function kdRenderUbUebersicht(alleStunden) {
           const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
           const fach = r.fach || r._spFach;
           const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
-          return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''}">
+          const hj = kdHjFuerLesson(r);
+          const thBg = hjThBgUb[hj] || hjThBgUb[0];
+          return `<th style="background:${thBg};color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''} · ${hj?hj+'.HJ':''}">
             <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
             <div style="opacity:0.7;">${datumStr}</div>
             <div style="opacity:0.5;">${stdLabel}</div>
