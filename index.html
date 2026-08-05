@@ -560,6 +560,7 @@
     </div>
     <div style="display:flex;gap:3px;background:var(--gray-100);border-radius:9px;padding:3px;margin-bottom:16px;width:fit-content;">
       <button data-kd-tab="checkliste" onclick="kdZeigeUnterseite('checkliste')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--white);color:var(--gray-800);box-shadow:0 1px 3px rgba(0,0,0,0.1);">✅ Checkliste</button>
+      <button data-kd-tab="unterricht" onclick="kdZeigeUnterseite('unterricht')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📚 Unterricht</button>
     </div>
     <div id="kd-content"></div>
   </div>
@@ -1075,6 +1076,7 @@ let kdAktiveUnterseite = 'checkliste';
 let kdSchueler = [];
 let kdSpalten = [];
 let kdEintraege = {};
+let kdUnterricht = [];
 
 async function kdOeffneKlasse(klasseId) {
   const klasse = allKlassen.find(k => k.id === klasseId);
@@ -1082,7 +1084,7 @@ async function kdOeffneKlasse(klasseId) {
   kdAktiveKlasseId = klasseId;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
-  await kdLadeCheckliste();
+  await Promise.all([kdLadeCheckliste(), kdLadeUnterricht()]);
   kdZeigeUnterseite('checkliste');
 }
 
@@ -1096,6 +1098,7 @@ function kdZeigeUnterseite(seite) {
     btn.style.boxShadow = isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none';
   });
   if (seite === 'checkliste') kdRenderCheckliste();
+  if (seite === 'unterricht') kdRenderUnterricht();
 }
 
 async function kdLadeCheckliste() {
@@ -1113,6 +1116,156 @@ async function kdLadeCheckliste() {
   }
 }
 
+// ── Unterricht-Tab ──────────────────────────────────────────────
+async function kdLadeUnterricht() {
+  const { data } = await sb.from('unterrichtsplanung')
+    .select('*')
+    .eq('klasse_id', kdAktiveKlasseId);
+  kdUnterricht = (data || []).sort((a, b) => {
+    const dA = kdDatumAusKW(a.kalenderwoche, a.jahr, a.wochentag);
+    const dB = kdDatumAusKW(b.kalenderwoche, b.jahr, b.wochentag);
+    if (dB - dA !== 0) return dB - dA;          // neueste zuerst
+    return a.stunde - b.stunde;                   // dann nach Stunde
+  });
+}
+
+function kdDatumAusKW(kw, jahr, wochentag) {
+  const monday = getMondayOfWeek(kw, jahr);
+  const d = new Date(monday);
+  d.setUTCDate(d.getUTCDate() + wochentag - 1);
+  return d;
+}
+
+function kdRenderUnterricht() {
+  const container = document.getElementById('kd-content');
+  if (kdAktiveUnterseite !== 'unterricht') return;
+
+  if (kdUnterricht.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--gray-400);">
+        <div style="font-size:2.5rem;margin-bottom:12px;">📚</div>
+        <div style="font-size:1rem;font-weight:600;margin-bottom:6px;color:var(--gray-600);">Noch keine Unterrichtsstunden</div>
+        <div style="font-size:0.85rem;line-height:1.5;">Trage in der Unterrichtsplanung Stunden mit dieser Klasse ein –<br>sie erscheinen hier automatisch.</div>
+      </div>`;
+    return;
+  }
+
+  const wochentage = ['', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
+  const wdKurz     = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr'];
+
+  // Nach KW+Jahr gruppieren (absteigend)
+  const gruppen = {};
+  kdUnterricht.forEach(r => {
+    const key = `${r.jahr}-${String(r.kalenderwoche).padStart(2,'0')}`;
+    if (!gruppen[key]) gruppen[key] = { kw: r.kalenderwoche, jahr: r.jahr, zeilen: [] };
+    gruppen[key].zeilen.push(r);
+  });
+  const gruppenKeys = Object.keys(gruppen).sort().reverse();
+
+  let html = `<div style="display:flex;flex-direction:column;gap:16px;">`;
+
+  gruppenKeys.forEach(key => {
+    const g = gruppen[key];
+    const monday = getMondayOfWeek(g.kw, g.jahr);
+    const friday = new Date(monday); friday.setUTCDate(monday.getUTCDate() + 4);
+    const vonStr = monday.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', timeZone:'UTC'});
+    const bisStr = friday.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC'});
+
+    html += `
+    <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+      <!-- Woche-Header -->
+      <div style="background:var(--gray-800);color:white;padding:10px 16px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;opacity:0.6;text-transform:uppercase;">KW ${g.kw}</span>
+        <span style="font-size:13px;font-weight:600;">${vonStr} – ${bisStr}</span>
+      </div>
+      <!-- Zeilen -->
+      <div style="display:flex;flex-direction:column;">`;
+
+    g.zeilen.forEach((r, idx) => {
+      const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+      const datumStr = datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC'});
+      const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50)';
+      const hasContent = r.inhalt || r.hausaufgaben || r.notiz;
+
+      html += `
+        <div style="display:grid;grid-template-columns:auto auto 1fr;gap:0;border-top:${idx>0?'1px solid var(--gray-100)':'none'};">
+
+          <!-- Linke Info-Spalte -->
+          <div style="padding:12px 14px;background:${rowBg};border-right:1px solid var(--gray-100);min-width:110px;display:flex;flex-direction:column;justify-content:center;gap:2px;">
+            <div style="font-size:12px;font-weight:700;color:var(--gray-800);">${wdKurz[r.wochentag]}, ${datumStr}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+              <span style="background:var(--gray-100);color:var(--gray-600);font-size:11px;font-weight:600;padding:1px 7px;border-radius:20px;white-space:nowrap;">${r.stunde}. Std.</span>
+              ${r.fach ? `<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:1px 7px;border-radius:20px;white-space:nowrap;">${r.fach}</span>` : ''}
+            </div>
+          </div>
+
+          <!-- Inhalt (breit) -->
+          <div style="padding:12px 14px;background:${rowBg};border-right:1px solid var(--gray-100);min-width:160px;flex:1;">
+            <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Inhalt</div>
+            <div contenteditable="true"
+              data-uid="${r.id}" data-feld="inhalt"
+              style="font-size:13px;color:var(--gray-800);min-height:20px;outline:none;border-radius:6px;padding:2px 4px;transition:background 0.15s;"
+              onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'"
+              onfocus="this.style.background='#eff6ff';this.style.outline='2px solid #bfdbfe'"
+              onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
+              >${r.inhalt || '<span style=\"color:var(--gray-300);font-size:12px;\">Klicken zum Bearbeiten…</span>'}</div>
+          </div>
+
+          <!-- HA + Notiz gestapelt -->
+          <div style="display:flex;flex-direction:column;background:${rowBg};">
+            <div style="padding:8px 14px;border-bottom:1px solid var(--gray-100);flex:1;">
+              <div style="font-size:10px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">📝 Hausaufgaben</div>
+              <div contenteditable="true"
+                data-uid="${r.id}" data-feld="hausaufgaben"
+                style="font-size:13px;color:var(--gray-800);min-height:18px;outline:none;border-radius:6px;padding:2px 4px;transition:background 0.15s;"
+                onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'"
+                onfocus="this.style.background='#fffbeb';this.style.outline='2px solid #fde68a'"
+                onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
+                >${r.hausaufgaben || '<span style=\"color:var(--gray-300);font-size:12px;\">–</span>'}</div>
+            </div>
+            <div style="padding:8px 14px;flex:1;">
+              <div style="font-size:10px;font-weight:700;color:#8b5cf6;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">💬 Notiz</div>
+              <div contenteditable="true"
+                data-uid="${r.id}" data-feld="notiz"
+                style="font-size:13px;color:var(--gray-800);min-height:18px;outline:none;border-radius:6px;padding:2px 4px;transition:background 0.15s;"
+                onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'"
+                onfocus="this.style.background='#f5f3ff';this.style.outline='2px solid #ddd6fe'"
+                onblur="this.style.background='transparent';this.style.outline='none';kdSpeichereUnterrichtZelle(this)"
+                >${r.notiz || '<span style=\"color:var(--gray-300);font-size:12px;\">–</span>'}</div>
+            </div>
+          </div>
+
+        </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+async function kdSpeichereUnterrichtZelle(el) {
+  // Placeholder-Spans entfernen und reinen Text holen
+  const wert = el.innerText.trim();
+  const id = el.dataset.uid;
+  const feld = el.dataset.feld;
+
+  // Lokale Daten aktualisieren
+  const row = kdUnterricht.find(r => String(r.id) === String(id));
+  if (row) row[feld] = wert;
+
+  const { error } = await sb.from('unterrichtsplanung').update({ [feld]: wert }).eq('id', id);
+
+  // Kurzes visuelles Feedback
+  if (!error) {
+    el.style.background = '#dcfce7';
+    el.style.outline = '2px solid #86efac';
+    setTimeout(() => { el.style.background = 'transparent'; el.style.outline = 'none'; }, 800);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
 function kdRenderCheckliste() {
   const container = document.getElementById('kd-content');
   if (kdAktiveUnterseite !== 'checkliste') return;
