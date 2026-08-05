@@ -561,6 +561,7 @@
     <div style="display:flex;gap:3px;background:var(--gray-100);border-radius:9px;padding:3px;margin-bottom:16px;width:fit-content;">
       <button data-kd-tab="checkliste" onclick="kdZeigeUnterseite('checkliste')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#dcfce7;color:#15803d;box-shadow:0 0 0 2px #86efac;">✅ Checkliste</button>
       <button data-kd-tab="unterricht" onclick="kdZeigeUnterseite('unterricht')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📚 Unterricht</button>
+      <button data-kd-tab="anwesenheit" onclick="kdZeigeUnterseite('anwesenheit')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">👥 Anwesenheit</button>
     </div>
     <div id="kd-content"></div>
   </div>
@@ -1079,6 +1080,9 @@ let kdEintraege = {};
 let kdUnterricht = [];
 let kdUnterrichtFachFilter = null;
 function kdSetFachFilter(f) { kdUnterrichtFachFilter = f || null; kdRenderUnterricht(); }
+let kdAnwesenheit = []; // { id, schueler_id, kalenderwoche, jahr, wochentag, stunde, status }
+let kdAnwAktStunde = null; // { kw, jahr, wochentag, stunde } – gewählte Stunde im Erfassen-Tab
+let kdAnwAnsicht = 'erfassen'; // 'erfassen' | 'uebersicht'
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
   // Aktuelle KW suchen, sonst nächste verfügbare
@@ -1100,6 +1104,8 @@ async function kdOeffneKlasse(klasseId) {
   if (!klasse) return;
   kdAktiveKlasseId = klasseId;
   kdUnterrichtFachFilter = null; // Filter zurücksetzen beim Klassenwechsel
+  kdAnwAktStunde = null;         // Anwesenheits-Auswahl zurücksetzen
+  kdAnwAnsicht = 'erfassen';
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht()]);
@@ -1117,6 +1123,7 @@ function kdZeigeUnterseite(seite) {
   });
   if (seite === 'checkliste') kdRenderCheckliste();
   if (seite === 'unterricht') { kdLadeUnterricht().then(() => kdRenderUnterricht()); }
+  if (seite === 'anwesenheit') { kdLadeAnwesenheit().then(() => kdRenderAnwesenheit()); }
 }
 
 async function kdLadeCheckliste() {
@@ -1537,6 +1544,263 @@ async function kdSpeichereUnterrichtZelle(el) {
     el.style.outline = '2px solid #86efac';
     setTimeout(() => { el.style.background = 'transparent'; el.style.outline = 'none'; }, 700);
   }
+}
+
+// ── Anwesenheit-Tab ──────────────────────────────────────────────
+async function kdLadeAnwesenheit() {
+  const heute = new Date();
+  const sjJahr = heute.getMonth() >= 8 ? heute.getFullYear() : heute.getFullYear() - 1;
+  const { data, error } = await sb.from('anwesenheit')
+    .select('*')
+    .eq('klasse_id', kdAktiveKlasseId)
+    .gte('jahr', sjJahr);
+  if (error) {
+    // Tabelle fehlt noch (code 42P01) oder anderer Fehler → leer
+    kdAnwesenheit = [];
+    if (error.code !== '42P01') console.warn('anwesenheit load error:', error);
+    return;
+  }
+  kdAnwesenheit = data || [];
+}
+
+function kdAnwSetAnsicht(ansicht) {
+  kdAnwAnsicht = ansicht;
+  kdRenderAnwesenheit();
+}
+
+function kdAnwSetStunde(kw, jahr, wochentag, stunde) {
+  kdAnwAktStunde = { kw, jahr, wochentag, stunde };
+  kdRenderAnwesenheit();
+}
+
+async function kdAnwToggle(schuelerId) {
+  if (!kdAnwAktStunde) return;
+  const { kw, jahr, wochentag, stunde } = kdAnwAktStunde;
+  const states = ['fehlend', 'entschuldigt', 'verspaetet'];
+  const existing = kdAnwesenheit.find(a =>
+    a.schueler_id === schuelerId &&
+    a.kalenderwoche === kw && a.jahr === jahr &&
+    a.wochentag === wochentag && a.stunde === stunde
+  );
+  if (!existing) {
+    // anwesend → fehlend
+    const { data, error } = await sb.from('anwesenheit').insert({
+      schueler_id: schuelerId,
+      klasse_id: kdAktiveKlasseId,
+      kalenderwoche: kw, jahr, wochentag, stunde,
+      status: 'fehlend'
+    }).select().single();
+    if (!error && data) kdAnwesenheit.push(data);
+  } else {
+    const curIdx = states.indexOf(existing.status);
+    if (curIdx >= states.length - 1) {
+      // verspaetet → anwesend (Eintrag löschen)
+      await sb.from('anwesenheit').delete().eq('id', existing.id);
+      kdAnwesenheit = kdAnwesenheit.filter(a => a.id !== existing.id);
+    } else {
+      const newStatus = states[curIdx + 1];
+      const { error } = await sb.from('anwesenheit').update({ status: newStatus }).eq('id', existing.id);
+      if (!error) existing.status = newStatus;
+    }
+  }
+  kdRenderAnwesenheit();
+}
+
+function kdRenderAnwesenheit() {
+  const container = document.getElementById('kd-content');
+  if (kdAktiveUnterseite !== 'anwesenheit') return;
+
+  // Vergangene Stunden (KW ≤ aktuelle KW)
+  const heute = new Date();
+  const { kw: hKW, jahr: hJahr } = getISOWeek(heute);
+  const hPos = hJahr * 100 + hKW;
+  const vergangenStunden = kdUnterricht.filter(r => r.jahr * 100 + r.kalenderwoche <= hPos);
+
+  const tabBtnStyle = (a) => kdAnwAnsicht === a
+    ? 'background:#1d4ed8;color:white;border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+    : 'background:transparent;color:var(--gray-500);border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;';
+
+  let html = `
+    <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;width:fit-content;margin-bottom:16px;">
+      <button onclick="kdAnwSetAnsicht('erfassen')" style="${tabBtnStyle('erfassen')}">📝 Erfassen</button>
+      <button onclick="kdAnwSetAnsicht('uebersicht')" style="${tabBtnStyle('uebersicht')}">📊 Übersicht</button>
+    </div>`;
+
+  html += kdAnwAnsicht === 'erfassen'
+    ? kdRenderAnwErfassen(vergangenStunden)
+    : kdRenderAnwUebersicht(vergangenStunden);
+
+  container.innerHTML = html;
+}
+
+function kdRenderAnwErfassen(vergangenStunden) {
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+
+  if (vergangenStunden.length === 0) {
+    return `<div style="text-align:center;padding:40px 20px;color:var(--gray-400);">
+      <div style="font-size:2rem;margin-bottom:8px;">👥</div>
+      <div>Noch keine vergangenen Stunden vorhanden.</div>
+    </div>`;
+  }
+
+  // Neueste Stunde zuerst im Dropdown (zuletzt unterrichtete zuerst auswählen)
+  const stundenRev = [...vergangenStunden].reverse();
+
+  // Standard: letzte Stunde vorauswählen
+  if (!kdAnwAktStunde) {
+    const last = stundenRev[0];
+    kdAnwAktStunde = { kw: last.kalenderwoche, jahr: last.jahr, wochentag: last.wochentag, stunde: last.stunde };
+  }
+  const aktKey = `${kdAnwAktStunde.kw}-${kdAnwAktStunde.jahr}-${kdAnwAktStunde.wochentag}-${kdAnwAktStunde.stunde}`;
+
+  let html = `
+    <div style="margin-bottom:16px;">
+      <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Unterrichtsstunde wählen:</label>
+      <select onchange="(function(v){const p=v.split('-');kdAnwSetStunde(+p[0],+p[1],+p[2],+p[3]);})(this.value)"
+        style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--gray-200);font-size:13px;background:white;cursor:pointer;width:100%;max-width:380px;">
+        ${stundenRev.map(r => {
+          const rKey = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+          const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+          const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'UTC'});
+          const fachLabel = (r.fach||r._spFach) ? ` (${r.fach||r._spFach})` : '';
+          return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]} ${datumStr} · ${r.stunde}. Std.${fachLabel}</option>`;
+        }).join('')}
+      </select>
+    </div>`;
+
+  if (kdSchueler.length === 0) {
+    return html + `<div style="text-align:center;padding:30px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
+  }
+
+  // Anwesenheits-Map für gewählte Stunde
+  const anwMap = {};
+  kdAnwesenheit.forEach(a => {
+    if (a.kalenderwoche === kdAnwAktStunde.kw && a.jahr === kdAnwAktStunde.jahr &&
+        a.wochentag === kdAnwAktStunde.wochentag && a.stunde === kdAnwAktStunde.stunde) {
+      anwMap[a.schueler_id] = a.status;
+    }
+  });
+
+  const statusCfg = {
+    anwesend:     { label:'✓ Anwesend',      bg:'#dcfce7', color:'#15803d', border:'#86efac' },
+    fehlend:      { label:'❌ Fehlend',       bg:'#fee2e2', color:'#991b1b', border:'#fca5a5' },
+    entschuldigt: { label:'📄 Entschuldigt',  bg:'#fef3c7', color:'#92400e', border:'#fcd34d' },
+    verspaetet:   { label:'⏰ Verspätet',     bg:'#ede9fe', color:'#5b21b6', border:'#c4b5fd' },
+  };
+
+  const fehlend      = Object.values(anwMap).filter(s=>s==='fehlend').length;
+  const entschuldigt = Object.values(anwMap).filter(s=>s==='entschuldigt').length;
+  const verspaetet   = Object.values(anwMap).filter(s=>s==='verspaetet').length;
+  const anwesend     = kdSchueler.length - fehlend - entschuldigt - verspaetet;
+
+  html += `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span style="background:#dcfce7;color:#15803d;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">✓ ${anwesend} Anwesend</span>
+      ${fehlend      ? `<span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">❌ ${fehlend} Fehlend</span>` : ''}
+      ${entschuldigt ? `<span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">📄 ${entschuldigt} Entschuldigt</span>` : ''}
+      ${verspaetet   ? `<span style="background:#ede9fe;color:#5b21b6;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">⏰ ${verspaetet} Verspätet</span>` : ''}
+    </div>
+    <div style="background:white;border-radius:12px;border:1px solid var(--gray-200);overflow:hidden;">`;
+
+  kdSchueler.forEach((s, idx) => {
+    const status = anwMap[s.id] || 'anwesend';
+    const cfg = statusCfg[status];
+    const borderTop = idx > 0 ? 'border-top:1px solid var(--gray-100);' : '';
+    html += `
+      <div style="display:flex;align-items:center;padding:10px 14px;${borderTop}gap:12px;">
+        <div style="flex:1;font-size:13px;font-weight:600;color:var(--gray-800);">${s.nachname}, ${s.vorname}</div>
+        <button onclick="kdAnwToggle('${s.id}')"
+          style="background:${cfg.bg};color:${cfg.color};border:1.5px solid ${cfg.border};padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:140px;text-align:center;">
+          ${cfg.label}
+        </button>
+      </div>`;
+  });
+
+  html += `</div>
+    <div style="margin-top:10px;font-size:11px;color:var(--gray-400);text-align:center;">
+      Tippe auf den Status um ihn zu ändern: Anwesend → Fehlend → Entschuldigt → Verspätet → Anwesend
+    </div>`;
+  return html;
+}
+
+function kdRenderAnwUebersicht(vergangenStunden) {
+  if (kdSchueler.length === 0) {
+    return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
+  }
+  if (vergangenStunden.length === 0) {
+    return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Noch keine vergangenen Stunden vorhanden.</div>`;
+  }
+
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+
+  // Lookup: "schuelerId-kw-jahr-wd-std" → status
+  const anwLookup = {};
+  kdAnwesenheit.forEach(a => {
+    anwLookup[`${a.schueler_id}-${a.kalenderwoche}-${a.jahr}-${a.wochentag}-${a.stunde}`] = a.status;
+  });
+
+  const statusKurz = {
+    fehlend:      { text:'F', bg:'#fee2e2', color:'#991b1b', title:'Fehlend' },
+    entschuldigt: { text:'E', bg:'#fef3c7', color:'#92400e', title:'Entschuldigt' },
+    verspaetet:   { text:'V', bg:'#ede9fe', color:'#5b21b6', title:'Verspätet' },
+  };
+
+  // Zusammenfassung pro Schüler
+  const sum = {};
+  kdSchueler.forEach(s => { sum[s.id] = { fehlend:0, entschuldigt:0, verspaetet:0 }; });
+  kdAnwesenheit.forEach(a => {
+    if (sum[a.schueler_id]) sum[a.schueler_id][a.status] = (sum[a.schueler_id][a.status]||0) + 1;
+  });
+
+  let html = `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);">
+    <table style="border-collapse:collapse;min-width:max-content;width:100%;">
+      <thead>
+        <tr>
+          <th style="position:sticky;left:0;z-index:2;background:var(--gray-800);color:white;padding:8px 14px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;min-width:150px;">Schüler/in</th>
+          ${vergangenStunden.map(r => {
+            const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+            const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
+            return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;">
+              <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
+              <div style="opacity:0.7;">${datumStr}</div>
+              <div style="opacity:0.5;">${r.stunde}.</div>
+            </th>`;
+          }).join('')}
+          <th style="background:var(--gray-700);color:white;padding:6px 10px;font-size:10px;font-weight:700;text-align:center;white-space:nowrap;min-width:80px;">Summe</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  kdSchueler.forEach((s, idx) => {
+    const rowBg = idx % 2 === 0 ? 'white' : '#fafafa';
+    const s_sum = sum[s.id];
+    const gesamtFehlend = s_sum.fehlend + s_sum.entschuldigt + s_sum.verspaetet;
+    html += `<tr>
+      <td style="position:sticky;left:0;z-index:1;background:${rowBg};padding:7px 14px;font-size:12px;font-weight:600;color:var(--gray-800);white-space:nowrap;border-bottom:1px solid var(--gray-100);">${s.nachname}, ${s.vorname}</td>
+      ${vergangenStunden.map(r => {
+        const key = `${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+        const status = anwLookup[key];
+        if (!status) return `<td style="background:${rowBg};border-bottom:1px solid var(--gray-100);"></td>`;
+        const cfg = statusKurz[status];
+        return `<td style="background:${cfg.bg};border-bottom:1px solid var(--gray-100);text-align:center;" title="${cfg.title}">
+          <span style="color:${cfg.color};font-size:11px;font-weight:700;">${cfg.text}</span>
+        </td>`;
+      }).join('')}
+      <td style="background:${rowBg};border-bottom:1px solid var(--gray-100);text-align:center;padding:4px 8px;font-size:11px;font-weight:700;">
+        ${!gesamtFehlend
+          ? '<span style="color:#16a34a;">✓</span>'
+          : `${s_sum.fehlend?`<span style="color:#991b1b">${s_sum.fehlend}F</span> `:''}${s_sum.entschuldigt?`<span style="color:#92400e">${s_sum.entschuldigt}E</span> `:''}${s_sum.verspaetet?`<span style="color:#5b21b6">${s_sum.verspaetet}V</span>`:''}`.trim()}
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>
+    <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--gray-500);">
+      <span><span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:10px;font-weight:700;">F</span> Fehlend</span>
+      <span><span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-weight:700;">E</span> Entschuldigt</span>
+      <span><span style="background:#ede9fe;color:#5b21b6;padding:1px 7px;border-radius:10px;font-weight:700;">V</span> Verspätet</span>
+    </div>`;
+  return html;
 }
 
 // ────────────────────────────────────────────────────────────────
