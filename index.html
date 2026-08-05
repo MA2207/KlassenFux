@@ -643,6 +643,15 @@
       <button class="btn btn-secondary btn-sm" onclick="addFach()" style="margin-top:8px;">＋ Fach hinzufügen</button>
     </div>
 
+    <!-- Notenkonfiguration -->
+    <div class="settings-section">
+      <div class="settings-section-title">Notenkonfiguration</div>
+      <p style="font-size:0.85rem; color:var(--gray-400); margin:0 0 12px;">
+        Lege pro Fach beliebig viele Hauptkategorien mit Gewichtung fest (Summe 100%). Jede Hauptkategorie kann zusätzlich beliebig viele Unterkategorien mit eigener Gewichtung enthalten (Summe je Hauptkategorie 100%).
+      </p>
+      <div id="notenkonfig-list"></div>
+    </div>
+
     <!-- Bundesland & Ferien -->
     <div class="settings-section">
       <div class="settings-section-title">Bundesland &amp; Schulferien</div>
@@ -3231,6 +3240,7 @@ function applyEinstellungen(saved) {
 
   renderFreieTage(saved.freieTage || []);
   renderFaecher(saved.faecher || []);
+  renderNotenKonfiguration(saved.notenKonfiguration || {}, saved.faecher || []);
 }
 
 async function loadEinstellungen() {
@@ -3258,6 +3268,8 @@ async function saveEinstellungen() {
     datum: r.querySelector('[data-ft-datum]').value,
   })).filter(t => t.bezeichnung || t.datum);
 
+  const notenKonfiguration = kdNotenKonfigurationAuslesen();
+
   const daten = {
     lehrername: document.getElementById('set-lehrername').value.trim(),
     schulname: document.getElementById('set-schulname').value.trim(),
@@ -3271,6 +3283,7 @@ async function saveEinstellungen() {
     bundesland: document.getElementById('set-bundesland').value,
     freieTage,
     faecher,
+    notenKonfiguration,
   };
   await sb.from('einstellungen').upsert({ id: 1, daten });
 }
@@ -3386,8 +3399,8 @@ function makeFachRow(name = '') {
   div.className = 'fach-row';
   div.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:8px;';
   div.innerHTML = `
-    <input class="form-input" type="text" placeholder="z.B. Mathematik" value="${name}" data-fach oninput="autoSave()">
-    <button onclick="this.closest('.fach-row').remove(); autoSave();" title="Entfernen" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--gray-400);">🗑</button>
+    <input class="form-input" type="text" placeholder="z.B. Mathematik" value="${name}" data-fach oninput="autoSave()" onchange="refreshNotenKonfiguration()">
+    <button onclick="this.closest('.fach-row').remove(); autoSave(); refreshNotenKonfiguration();" title="Entfernen" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--gray-400);">🗑</button>
   `;
   return div;
 }
@@ -3395,6 +3408,140 @@ function makeFachRow(name = '') {
 function addFach() {
   document.getElementById('faecher-list').appendChild(makeFachRow());
   autoSave();
+  refreshNotenKonfiguration();
+}
+
+// ── Notenkonfiguration (pro Fach: Hauptkategorien + Unterkategorien mit Gewichtung) ──
+function renderNotenKonfiguration(config, faecherListe) {
+  const container = document.getElementById('notenkonfig-list');
+  if (!container) return;
+  const faecher = (faecherListe || []).filter(Boolean);
+  config = config || {};
+  if (!faecher.length) {
+    container.innerHTML = '<p style="color:var(--gray-400);font-size:0.85rem;">Lege zuerst ein Fach unter „Meine Fächer" an.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  faecher.forEach(fach => {
+    const cfg = config[fach] || { hauptkategorien: [] };
+    container.appendChild(makeNkFachCard(fach, cfg));
+  });
+}
+
+function refreshNotenKonfiguration() {
+  const faecher = [...document.querySelectorAll('[data-fach]')].map(i => i.value.trim()).filter(Boolean);
+  const config = kdNotenKonfigurationAuslesen();
+  renderNotenKonfiguration(config, faecher);
+}
+
+function makeNkFachCard(fach, cfg) {
+  const div = document.createElement('div');
+  div.className = 'notenkonfig-fach';
+  div.dataset.nkFach = fach;
+  div.style.cssText = 'border:1px solid var(--gray-200);border-radius:10px;padding:12px;margin-bottom:12px;';
+  div.innerHTML = `
+    <div style="font-weight:700;font-size:0.95rem;margin-bottom:8px;">${fach}</div>
+    <div class="nk-hauptkat-list"></div>
+    <div class="nk-hauptkat-summe" style="font-size:0.75rem;margin:4px 0 8px;"></div>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="nkHauptkatHinzufuegen(this)">＋ Hauptkategorie</button>
+  `;
+  const list = div.querySelector('.nk-hauptkat-list');
+  (cfg.hauptkategorien || []).forEach(hk => list.appendChild(makeNkHauptkatRow(hk)));
+  nkHauptkatSummeAktualisieren(div);
+  return div;
+}
+
+function makeNkHauptkatRow(hk = {}) {
+  const div = document.createElement('div');
+  div.className = 'nk-hauptkat-row';
+  div.style.cssText = 'border:1px solid var(--gray-100);border-radius:8px;padding:8px;margin-bottom:8px;';
+  div.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+      <input type="text" class="form-input" data-nk-hk-name value="${(hk.name || '').replace(/"/g, '&quot;')}" placeholder="z.B. Mündlich" oninput="autoSave()" style="flex:1;">
+      <input type="number" min="0" max="100" data-nk-hk-gewicht value="${hk.gewicht ?? 0}" oninput="autoSave(); nkHauptkatSummeAktualisieren(this)" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> %
+      <button type="button" onclick="const c=this.closest('.notenkonfig-fach'); this.closest('.nk-hauptkat-row').remove(); nkHauptkatSummeAktualisieren(c); autoSave();" title="Entfernen" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--gray-400);">🗑</button>
+    </div>
+    <div class="nk-unterkat-list" style="margin-left:16px;"></div>
+    <div class="nk-unterkat-summe" style="font-size:0.7rem;color:var(--gray-400);margin:2px 0 6px 16px;"></div>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="nkUnterkatHinzufuegen(this)" style="margin-left:16px;">＋ Unterkategorie</button>
+  `;
+  const ulist = div.querySelector('.nk-unterkat-list');
+  (hk.unterkategorien || []).forEach(uk => ulist.appendChild(makeNkUnterkatRow(uk)));
+  nkUnterkatSummeAktualisieren(div);
+  return div;
+}
+
+function makeNkUnterkatRow(uk = {}) {
+  const div = document.createElement('div');
+  div.className = 'nk-unterkat-row';
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:4px;';
+  div.innerHTML = `
+    <input type="text" class="form-input" data-nk-uk-name value="${(uk.name || '').replace(/"/g, '&quot;')}" placeholder="z.B. Mitarbeit" oninput="autoSave()" style="flex:1;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+    <input type="number" min="0" max="100" data-nk-uk-gewicht value="${uk.gewicht ?? 0}" oninput="autoSave(); nkUnterkatSummeAktualisieren(this)" style="width:60px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> %
+    <button type="button" onclick="const h=this.closest('.nk-hauptkat-row'); this.closest('.nk-unterkat-row').remove(); nkUnterkatSummeAktualisieren(h); autoSave();" title="Entfernen" style="background:none;border:none;font-size:1rem;cursor:pointer;color:var(--gray-400);">🗑</button>
+  `;
+  return div;
+}
+
+function nkHauptkatHinzufuegen(btn) {
+  const card = btn.closest('.notenkonfig-fach');
+  const list = card.querySelector('.nk-hauptkat-list');
+  list.appendChild(makeNkHauptkatRow({ name: '', gewicht: 0 }));
+  nkHauptkatSummeAktualisieren(card);
+  autoSave();
+}
+
+function nkUnterkatHinzufuegen(btn) {
+  const hkRow = btn.closest('.nk-hauptkat-row');
+  const list = hkRow.querySelector('.nk-unterkat-list');
+  list.appendChild(makeNkUnterkatRow({ name: '', gewicht: 0 }));
+  nkUnterkatSummeAktualisieren(hkRow);
+  autoSave();
+}
+
+function nkHauptkatSummeAktualisieren(el) {
+  if (!el) return;
+  const card = el.closest('.notenkonfig-fach');
+  if (!card) return;
+  const summeEl = card.querySelector('.nk-hauptkat-summe');
+  if (!summeEl) return;
+  const rows = card.querySelectorAll('.nk-hauptkat-row');
+  let summe = 0;
+  rows.forEach(r => { summe += parseFloat(r.querySelector('[data-nk-hk-gewicht]')?.value) || 0; });
+  summeEl.textContent = rows.length ? `Summe Hauptkategorien: ${summe}%` : '';
+  summeEl.style.color = (rows.length === 0 || summe === 100) ? 'var(--gray-400)' : '#dc2626';
+}
+
+function nkUnterkatSummeAktualisieren(el) {
+  if (!el) return;
+  const hkRow = el.closest('.nk-hauptkat-row');
+  if (!hkRow) return;
+  const summeEl = hkRow.querySelector('.nk-unterkat-summe');
+  if (!summeEl) return;
+  const rows = hkRow.querySelectorAll('.nk-unterkat-row');
+  let summe = 0;
+  rows.forEach(r => { summe += parseFloat(r.querySelector('[data-nk-uk-gewicht]')?.value) || 0; });
+  summeEl.textContent = rows.length ? `Summe Unterkategorien: ${summe}%` : 'Keine Unterkategorien angelegt';
+  summeEl.style.color = (rows.length === 0 || summe === 100) ? 'var(--gray-400)' : '#dc2626';
+}
+
+function kdNotenKonfigurationAuslesen() {
+  const result = {};
+  document.querySelectorAll('.notenkonfig-fach').forEach(card => {
+    const fach = card.dataset.nkFach;
+    if (!fach) return;
+    const hauptkategorien = [...card.querySelectorAll('.nk-hauptkat-row')].map(hkRow => {
+      const name = hkRow.querySelector('[data-nk-hk-name]')?.value.trim() || '';
+      const gewicht = parseFloat(hkRow.querySelector('[data-nk-hk-gewicht]')?.value) || 0;
+      const unterkategorien = [...hkRow.querySelectorAll('.nk-unterkat-row')].map(ukRow => ({
+        name: ukRow.querySelector('[data-nk-uk-name]')?.value.trim() || '',
+        gewicht: parseFloat(ukRow.querySelector('[data-nk-uk-gewicht]')?.value) || 0,
+      })).filter(uk => uk.name);
+      return { name, gewicht, unterkategorien };
+    }).filter(hk => hk.name);
+    if (hauptkategorien.length) result[fach] = { hauptkategorien };
+  });
+  return result;
 }
 
 // ── Klassenfarben ──
