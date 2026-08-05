@@ -1628,32 +1628,55 @@ async function kdAnwToggle(schuelerId) {
   if (!kdAnwAktStunde) return;
   const { kw, jahr, wochentag, stunde } = kdAnwAktStunde;
   const states = ['fehlend', 'entschuldigt', 'verspaetet'];
-  const existing = kdAnwesenheit.find(a =>
-    a.schueler_id === schuelerId &&
-    a.kalenderwoche === kw && a.jahr === jahr &&
-    a.wochentag === wochentag && a.stunde === stunde
+
+  // Doppelstunden-Partner ermitteln
+  const aktLesson = kdUnterricht.find(r =>
+    r.kalenderwoche === kw && r.jahr === jahr &&
+    r.wochentag === wochentag && r.stunde === stunde
   );
-  if (!existing) {
-    // anwesend → fehlend
-    const { data, error } = await sb.from('anwesenheit').insert({
-      schueler_id: schuelerId,
-      klasse_id: kdAktiveKlasseId,
-      kalenderwoche: kw, jahr, wochentag, stunde,
-      status: 'fehlend'
-    }).select().single();
-    if (!error && data) kdAnwesenheit.push(data);
-  } else {
-    const curIdx = states.indexOf(existing.status);
-    if (curIdx >= states.length - 1) {
-      // verspaetet → anwesend (Eintrag löschen)
-      await sb.from('anwesenheit').delete().eq('id', existing.id);
-      kdAnwesenheit = kdAnwesenheit.filter(a => a.id !== existing.id);
+  const partnerStunde = (aktLesson?._isDoppelstunde && aktLesson?._doppelstundeEnde)
+    ? aktLesson._doppelstundeEnde : null;
+
+  // Hilfsfunktion: Status für eine bestimmte Stunde setzen
+  async function kdAnwSetStatus(std, newStatus) {
+    const ex = kdAnwesenheit.find(a =>
+      a.schueler_id === schuelerId && a.kalenderwoche === kw && a.jahr === jahr &&
+      a.wochentag === wochentag && a.stunde === std
+    );
+    if (newStatus === null) {
+      if (ex) {
+        await sb.from('anwesenheit').delete().eq('id', ex.id);
+        kdAnwesenheit = kdAnwesenheit.filter(a => a.id !== ex.id);
+      }
+    } else if (!ex) {
+      const { data, error } = await sb.from('anwesenheit').insert({
+        schueler_id: schuelerId, klasse_id: kdAktiveKlasseId,
+        kalenderwoche: kw, jahr, wochentag, stunde: std, status: newStatus
+      }).select().single();
+      if (!error && data) kdAnwesenheit.push(data);
     } else {
-      const newStatus = states[curIdx + 1];
-      const { error } = await sb.from('anwesenheit').update({ status: newStatus }).eq('id', existing.id);
-      if (!error) existing.status = newStatus;
+      const { error } = await sb.from('anwesenheit').update({ status: newStatus }).eq('id', ex.id);
+      if (!error) ex.status = newStatus;
     }
   }
+
+  // Hauptstunde toggeln und neuen Status ermitteln
+  const existing = kdAnwesenheit.find(a =>
+    a.schueler_id === schuelerId && a.kalenderwoche === kw && a.jahr === jahr &&
+    a.wochentag === wochentag && a.stunde === stunde
+  );
+  let newStatus;
+  if (!existing) {
+    newStatus = 'fehlend';
+  } else {
+    const curIdx = states.indexOf(existing.status);
+    newStatus = curIdx >= states.length - 1 ? null : states[curIdx + 1];
+  }
+  await kdAnwSetStatus(stunde, newStatus);
+
+  // Bei Doppelstunde: Partner-Stunde synchron setzen
+  if (partnerStunde) await kdAnwSetStatus(partnerStunde, newStatus);
+
   kdRenderAnwesenheit();
 }
 
@@ -1710,9 +1733,20 @@ function kdRenderAnwErfassen(vergangenStunden) {
     ? vergangenStunden.filter(r => (r.fach || r._spFach) === kdAnwFachFilter)
     : vergangenStunden;
 
-  // Standard: erste Stunde (älteste) vorauswählen, oder erste nach Fach-Filter
-  if (!kdAnwAktStunde && gefiltertStunden.length > 0) {
-    const first = gefiltertStunden[0];
+  // Zweite Stunden von Doppelstunden aus dem Dropdown ausblenden
+  const dsPartnerKeys = new Set();
+  gefiltertStunden.forEach(r => {
+    if (r._isDoppelstunde && r._doppelstundeEnde) {
+      dsPartnerKeys.add(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r._doppelstundeEnde}`);
+    }
+  });
+  const sichtbareStunden = gefiltertStunden.filter(r =>
+    !dsPartnerKeys.has(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
+  );
+
+  // Standard: erste sichtbare Stunde vorauswählen
+  if (!kdAnwAktStunde && sichtbareStunden.length > 0) {
+    const first = sichtbareStunden[0];
     kdAnwAktStunde = { kw: first.kalenderwoche, jahr: first.jahr, wochentag: first.wochentag, stunde: first.stunde };
   }
   const aktKey = kdAnwAktStunde
@@ -1735,21 +1769,22 @@ function kdRenderAnwErfassen(vergangenStunden) {
         style="${chipStyle(f)}padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">${f}</button>`).join('')}
     </div>
 
-    <!-- Stunden-Dropdown (älteste zuerst) -->
+    <!-- Stunden-Dropdown (älteste zuerst, Doppelstunden als eine Einheit) -->
     <div style="margin-bottom:16px;">
       <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Unterrichtsstunde wählen:</label>
-      ${gefiltertStunden.length === 0
+      ${sichtbareStunden.length === 0
         ? `<div style="font-size:13px;color:var(--gray-400);padding:8px 0;">Keine Stunden für dieses Fach gefunden.</div>`
         : `<select onchange="(function(v){const p=v.split('-');kdAnwSetStunde(+p[0],+p[1],+p[2],+p[3]);})(this.value)"
           style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--gray-200);font-size:13px;background:white;cursor:pointer;width:100%;max-width:400px;">
-          ${gefiltertStunden.map(r => {
+          ${sichtbareStunden.map(r => {
             const rKey = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
             const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
             const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
             const fachLabel = (r.fach||r._spFach) ? ` · ${r.fach||r._spFach}` : '';
+            const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std. (Doppelstunde)` : `${r.stunde}. Std.`;
             const istZukunft = datum > heuteEnde;
             const zukunftLabel = istZukunft ? ' 📅' : '';
-            return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${r.stunde}. Std.${fachLabel}${zukunftLabel}</option>`;
+            return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${stdLabel}${fachLabel}${zukunftLabel}</option>`;
           }).join('')}
         </select>`
       }
@@ -1839,10 +1874,22 @@ function kdRenderAnwUebersicht(vergangenStunden) {
 
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
 
-  // Nur bereits stattgefundene Stunden für Statistik & Prozent
+  // Doppelstunden-Partner-Keys (für Tabellenansicht zusammenführen)
+  const dsPartnerKeysUeb = new Set();
+  gefiltert.forEach(r => {
+    if (r._isDoppelstunde && r._doppelstundeEnde) {
+      dsPartnerKeysUeb.add(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r._doppelstundeEnde}`);
+    }
+  });
+  // Spalten: zweite Stunden ausblenden (aber für Statistik zählen beide)
+  const tabellenSpalten = gefiltert.filter(r =>
+    !dsPartnerKeysUeb.has(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
+  );
+
+  // Nur bereits stattgefundene Stunden für Statistik & Prozent (beide DS-Stunden zählen)
   const jetzt = new Date(); jetzt.setUTCHours(23, 59, 59, 999);
   const vergangeneGefiltert = gefiltert.filter(r => kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag) <= jetzt);
-  const totalStunden = vergangeneGefiltert.length; // Nenner für Prozentrechnung
+  const totalStunden = vergangeneGefiltert.length; // Doppelstunde = 2
 
   // Lookup: "schuelerId-kw-jahr-wd-std" → status
   const anwLookup = {};
@@ -1856,7 +1903,7 @@ function kdRenderAnwUebersicht(vergangenStunden) {
     verspaetet:   { text:'V', bg:'#ede9fe', color:'#5b21b6', title:'Verspätet' },
   };
 
-  // Zusammenfassung pro Schüler – nur für bereits stattgefundene Stunden
+  // Zusammenfassung pro Schüler – nur für bereits stattgefundene Stunden (inkl. DS-Partner)
   const sum = {};
   kdSchueler.forEach(s => { sum[s.id] = { fehlend:0, entschuldigt:0, verspaetet:0 }; });
   vergangeneGefiltert.forEach(r => {
@@ -1872,14 +1919,15 @@ function kdRenderAnwUebersicht(vergangenStunden) {
       <thead>
         <tr>
           <th style="position:sticky;left:0;z-index:2;background:var(--gray-800);color:white;padding:8px 14px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;min-width:190px;">Schüler/in</th>
-          ${gefiltert.map(r => {
+          ${tabellenSpalten.map(r => {
             const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
             const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
             const fach = r.fach || r._spFach;
-            return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;" title="${fach||''}">
+            const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
+            return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''}">
               <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
               <div style="opacity:0.7;">${datumStr}</div>
-              <div style="opacity:0.5;">${r.stunde}.</div>
+              <div style="opacity:0.5;">${stdLabel}</div>
             </th>`;
           }).join('')}
         </tr>
@@ -1892,7 +1940,7 @@ function kdRenderAnwUebersicht(vergangenStunden) {
     const fehlend = st.fehlend;
     const entschuldigt = st.entschuldigt;
     const verspaetet = st.verspaetet;
-    // Anwesenheitsquote: Verspätete zählen als anwesend
+    // Anwesenheitsquote: Verspätete zählen als anwesend; Doppelstunde = 2 Zähler
     const anwesenheitProzent = totalStunden > 0
       ? Math.round((totalStunden - fehlend - entschuldigt) / totalStunden * 100)
       : 100;
@@ -1914,13 +1962,13 @@ function kdRenderAnwUebersicht(vergangenStunden) {
             : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
         </div>
       </td>
-      ${gefiltert.map(r => {
+      ${tabellenSpalten.map(r => {
         const key = `${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
         const status = anwLookup[key];
         if (!status) return `<td style="background:${rowBg};border-bottom:1px solid var(--gray-100);"></td>`;
         const cfg = statusKurz[status];
-        return `<td style="background:${cfg.bg};border-bottom:1px solid var(--gray-100);text-align:center;" title="${cfg.title}">
-          <span style="color:${cfg.color};font-size:11px;font-weight:700;">${cfg.text}</span>
+        return `<td style="background:${cfg.bg};border-bottom:1px solid var(--gray-100);text-align:center;" title="${cfg.title}${r._isDoppelstunde?' (Doppelstunde)':''}">
+          <span style="color:${cfg.color};font-size:11px;font-weight:700;">${cfg.text}${r._isDoppelstunde?'²':''}</span>
         </td>`;
       }).join('')}
     </tr>`;
