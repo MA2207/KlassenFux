@@ -3327,9 +3327,9 @@ function kdRenderNotenUebersicht() {
       const hatUnterkat = hk.unterkategorien && hk.unterkategorien.length > 0;
       let subgroups;
       if (hatUnterkat) {
-        subgroups = hk.unterkategorien.map(uk => ({ name: uk.name, entries: hkEntries.filter(e => e.unterkategorie === uk.name) }));
+        subgroups = hk.unterkategorien.map(uk => ({ name: uk.name, kuerzel: uk.kuerzel, entries: hkEntries.filter(e => e.unterkategorie === uk.name) }));
         const ohne = hkEntries.filter(e => !hk.unterkategorien.some(uk => uk.name === e.unterkategorie));
-        if (ohne.length > 0) subgroups.push({ name: 'Sonstige', entries: ohne });
+        if (ohne.length > 0) subgroups.push({ name: 'Sonstige', kuerzel: '', entries: ohne });
       } else {
         subgroups = [{ name: null, entries: hkEntries }];
       }
@@ -3358,7 +3358,7 @@ function kdRenderNotenUebersicht() {
   // Ermöglicht es, Spalten per Ziehen am unteren rechten Eck breiter zu stellen (CSS resize)
   const resizeSpalte = (inhalt, minWidth) => `<div style="resize:horizontal;overflow:hidden;min-width:${minWidth}px;max-width:320px;padding:6px 10px;white-space:nowrap;box-sizing:border-box;">${inhalt}</div>`;
   const HJ_FARBE = { 1: '#7dd3fc', 2: '#f0a8a8' };
-  const HJ_LABEL = { 1: '1. Halbjahr', 2: '2. Halbjahr' };
+  const HJ_LABEL = { 1: '1. Hj', 2: '2. Hj' };
 
   const blockSpalten = (b, eingeklappt) => eingeklappt ? 1 : (b.subgroups.reduce((s, sg) => s + sg.entries.length + 1, 0) + (b.hatUnterkat ? 1 : 0));
   const istEingeklappt = (hj, hkName) => kdNotenUebKollabiert.has(hj + '::' + hkName);
@@ -3386,11 +3386,11 @@ function kdRenderNotenUebersicht() {
       const eingeklappt = istEingeklappt(hj, b.hk.name);
       const icon = eingeklappt ? '▸' : '▾';
       kopf2 += `<th colspan="${blockSpalten(b, eingeklappt)}" rowspan="${eingeklappt ? 3 : 1}" onclick="kdNotenUebToggleBlock(${hj},'${b.hk.name.replace(/'/g, "\\'")}')" title="Ein-/Ausklappen"
-        style="${stickyTop(1, `background:${b.hk.farbe || '#fde68a'};padding:7px 6px;font-size:12px;color:white;cursor:pointer;border-radius:6px 6px 0 0;white-space:nowrap;`)}">${icon} ${b.hk.name}</th>`;
+        style="${stickyTop(1, `background:${b.hk.farbe || '#fde68a'};padding:7px 6px;font-size:12px;color:white;cursor:pointer;border-radius:6px 6px 0 0;white-space:nowrap;`)}" title="${(b.hk.name || '').replace(/"/g, '&quot;')}">${icon} ${b.hk.kuerzel || b.hk.name}</th>`;
       if (eingeklappt) return;
       if (b.hatUnterkat) {
         b.subgroups.forEach(sg => {
-          kopf3 += `<th colspan="${sg.entries.length + 1}" style="${stickyTop(2, `background:var(--gray-100);padding:5px 6px;font-size:10px;font-weight:600;color:var(--gray-600);white-space:nowrap;`)}">${sg.name}</th>`;
+          kopf3 += `<th colspan="${sg.entries.length + 1}" style="${stickyTop(2, `background:var(--gray-100);padding:5px 6px;font-size:10px;font-weight:600;color:var(--gray-600);white-space:nowrap;`)}" title="${(sg.name || '').replace(/"/g, '&quot;')}">${sg.kuerzel || sg.name}</th>`;
           sg.entries.forEach(e => {
             kopf4 += `<th style="${stickyTop(3, `background:var(--gray-50,#f9fafb);padding:0;font-size:11px;font-weight:600;`)}" title="${(e.titel || '').replace(/"/g, '&quot;')}">${resizeSpalte(kuerzel(e.titel), 72)}</th>`;
           });
@@ -3406,8 +3406,8 @@ function kdRenderNotenUebersicht() {
     });
 
     kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:12px;font-weight:700;`)}">${resizeSpalte(HJ_LABEL[hj], 90)}</th>`;
-    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:11px;font-weight:700;`)}">${resizeSpalte(`errechnete<br>Zeugnisnote ${hj}. Hj`, 100)}</th>`;
-    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:11px;font-weight:700;${hj === 2 ? 'border-top-right-radius:12px;' : ''}`)}">${resizeSpalte(`erteilte<br>Zeugnisnote ${hj}. Hj`, 100)}</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:11px;font-weight:700;`)}">${resizeSpalte(`ZN ${hj} errechnet`, 100)}</th>`;
+    kopf2 += `<th rowspan="3" style="${stickyTop(1, `background:${HJ_FARBE[hj]};padding:0;font-size:11px;font-weight:700;${hj === 2 ? 'border-top-right-radius:12px;' : ''}`)}">${resizeSpalte(`ZN ${hj}`, 100)}</th>`;
   });
 
   const gespGroesse = kdNotenEinst.notenUebersichtFenstergroesse || {};
@@ -4424,6 +4424,7 @@ function makeNkHauptkatRow(hk = {}, index = 0) {
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
       <input type="color" data-nk-hk-farbe value="${hk.farbe || kdNkDefaultFarbe(index)}" oninput="autoSave()" title="Farbe" style="width:36px;height:32px;padding:2px;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;flex-shrink:0;">
       <input type="text" class="form-input" data-nk-hk-name value="${(hk.name || '').replace(/"/g, '&quot;')}" placeholder="z.B. Mündlich" oninput="autoSave()" style="flex:1;">
+      <input type="text" class="form-input" data-nk-hk-kuerzel value="${(hk.kuerzel || '').replace(/"/g, '&quot;')}" placeholder="Kürzel" title="Kürzel für die Notenübersicht" oninput="autoSave()" style="width:70px;flex-shrink:0;">
       <input type="number" min="0" max="100" data-nk-hk-gewicht value="${hk.gewicht ?? 0}" oninput="autoSave(); nkHauptkatSummeAktualisieren(this)" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> %
       <button type="button" onclick="const c=this.closest('.notenkonfig-fach'); this.closest('.nk-hauptkat-row').remove(); nkHauptkatSummeAktualisieren(c); autoSave();" title="Entfernen" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--gray-400);">🗑</button>
     </div>
@@ -4444,6 +4445,7 @@ function makeNkUnterkatRow(uk = {}, index = 0) {
   div.innerHTML = `
     <input type="color" data-nk-uk-farbe value="${uk.farbe || kdNkDefaultFarbe(index)}" oninput="autoSave()" title="Farbe" style="width:32px;height:30px;padding:2px;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;flex-shrink:0;">
     <input type="text" class="form-input" data-nk-uk-name value="${(uk.name || '').replace(/"/g, '&quot;')}" placeholder="z.B. Mitarbeit" oninput="autoSave()" style="flex:1;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+    <input type="text" class="form-input" data-nk-uk-kuerzel value="${(uk.kuerzel || '').replace(/"/g, '&quot;')}" placeholder="Kürzel" title="Kürzel für die Notenübersicht" oninput="autoSave()" style="width:60px;flex-shrink:0;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
     <input type="number" min="0" max="100" data-nk-uk-gewicht value="${uk.gewicht ?? 0}" oninput="autoSave(); nkUnterkatSummeAktualisieren(this)" style="width:60px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;"> %
     <button type="button" onclick="const h=this.closest('.nk-hauptkat-row'); this.closest('.nk-unterkat-row').remove(); nkUnterkatSummeAktualisieren(h); autoSave();" title="Entfernen" style="background:none;border:none;font-size:1rem;cursor:pointer;color:var(--gray-400);">🗑</button>
   `;
@@ -4523,14 +4525,16 @@ function kdNotenKonfigurationAuslesen() {
     if (!fach) return;
     const hauptkategorien = [...card.querySelectorAll('.nk-hauptkat-row')].map(hkRow => {
       const name = hkRow.querySelector('[data-nk-hk-name]')?.value.trim() || '';
+      const kuerzel = hkRow.querySelector('[data-nk-hk-kuerzel]')?.value.trim() || '';
       const gewicht = parseFloat(hkRow.querySelector('[data-nk-hk-gewicht]')?.value) || 0;
       const farbe = hkRow.querySelector('[data-nk-hk-farbe]')?.value || '';
       const unterkategorien = [...hkRow.querySelectorAll('.nk-unterkat-row')].map(ukRow => ({
         name: ukRow.querySelector('[data-nk-uk-name]')?.value.trim() || '',
+        kuerzel: ukRow.querySelector('[data-nk-uk-kuerzel]')?.value.trim() || '',
         gewicht: parseFloat(ukRow.querySelector('[data-nk-uk-gewicht]')?.value) || 0,
         farbe: ukRow.querySelector('[data-nk-uk-farbe]')?.value || '',
       })).filter(uk => uk.name);
-      return { name, gewicht, farbe, unterkategorien };
+      return { name, kuerzel, gewicht, farbe, unterkategorien };
     }).filter(hk => hk.name);
     if (hauptkategorien.length) result[fach] = { hauptkategorien };
   });
