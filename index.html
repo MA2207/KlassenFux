@@ -1359,9 +1359,10 @@ function kdRenderUnterricht() {
   });
   const gruppenKeys = Object.keys(gruppen).sort(); // aufsteigend: erste KW zuerst
 
-  // Statistik: Doppelstunden zählen als 2
-  const gesamt = gefiltertList.reduce((s, r) => s + (r._isDoppelstunde ? 2 : 1), 0);
-  const mitInhalt = gefiltertList.filter(r => r.inhalt).reduce((s, r) => s + (r._isDoppelstunde ? 2 : 1), 0);
+  // Statistik: Doppelstunden zählen als 2; ausgefallene Stunden werden nicht gezählt
+  const gesamt = gefiltertList.filter(r => !r.ausgefallen).reduce((s, r) => s + (r._isDoppelstunde ? 2 : 1), 0);
+  const mitInhalt = gefiltertList.filter(r => !r.ausgefallen && r.inhalt).reduce((s, r) => s + (r._isDoppelstunde ? 2 : 1), 0);
+  const ausgefallen_gesamt = gefiltertList.filter(r => r.ausgefallen).reduce((s, r) => s + (r._isDoppelstunde ? 2 : 1), 0);
 
   // Fach-Filter-Chips
   const chipStyle = (fach) => fach === kdUnterrichtFachFilter
@@ -1406,6 +1407,10 @@ function kdRenderUnterricht() {
         <span style="font-size:22px;font-weight:700;color:var(--gray-800);">${gruppenKeys.length}</span>
         <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Kalenderwochen</span>
       </div>
+      ${ausgefallen_gesamt > 0 ? `<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
+        <span style="font-size:22px;font-weight:700;color:#b91c1c;">${ausgefallen_gesamt}</span>
+        <span style="font-size:11px;color:#b91c1c;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Ausgefallen</span>
+      </div>` : ''}
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;">`;
 
@@ -1445,7 +1450,8 @@ function kdRenderUnterricht() {
     g.zeilen.forEach((r, idx) => {
       const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
       const datumStr = datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit', timeZone:'UTC'});
-      const rowBg = idx % 2 === 0 ? 'var(--white)' : '#fafafa';
+      const rowBg = r.ausgefallen ? '#fff5f5' : (idx % 2 === 0 ? 'var(--white)' : '#fafafa');
+      const rowOpacity = r.ausgefallen ? 'opacity:0.65;' : '';
       const hasContent = r.inhalt || r.hausaufgaben || r.notiz;
       const borderTop = idx > 0 ? 'border-top:1px solid var(--gray-100);' : '';
 
@@ -1459,11 +1465,15 @@ function kdRenderUnterricht() {
             <span style="background:${r._isDoppelstunde ? '#fef3c7' : 'var(--gray-100)'};color:${r._isDoppelstunde ? '#92400e' : 'var(--gray-600)'};font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;">${r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std.` : `${r.stunde}. Std.`}</span>
             ${(r.fach||r._spFach) ? `<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;">${r.fach||r._spFach}</span>` : ''}
           </div>
-          ${!hasContent ? '<div style="font-size:10px;color:var(--gray-300);margin-top:2px;">Kein Eintrag</div>' : ''}
+          ${r.ausgefallen ? '<span style="font-size:10px;font-weight:700;background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:20px;white-space:nowrap;">✕ Ausgefallen</span>' : (!hasContent ? '<div style="font-size:10px;color:var(--gray-300);margin-top:2px;">Kein Eintrag</div>' : '')}
+          <button onclick="kdToggleAusgefallen('${r._key}')"
+            style="margin-top:4px;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;width:100%;box-sizing:border-box;${r.ausgefallen ? 'background:#fee2e2;color:#b91c1c;border:1.5px solid #fca5a5;' : 'background:var(--gray-100);color:var(--gray-400);border:1.5px solid var(--gray-200);'}">
+            ${r.ausgefallen ? '↩ Wiederherstellen' : '✕ Ausgefallen'}
+          </button>
         </div>
 
         <!-- Inhalt -->
-        <div style="padding:10px 12px;background:${rowBg};border-right:1px solid var(--gray-100);">
+        <div style="padding:10px 12px;background:${rowBg};border-right:1px solid var(--gray-100);${rowOpacity}">
           <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Inhalt</div>
           <div contenteditable="true"
             data-rkey="${r._key}" data-feld="inhalt"
@@ -1475,7 +1485,7 @@ function kdRenderUnterricht() {
         </div>
 
         <!-- Hausaufgaben -->
-        <div style="padding:10px 12px;background:${rowBg};border-right:1px solid var(--gray-100);">
+        <div style="padding:10px 12px;background:${rowBg};border-right:1px solid var(--gray-100);${rowOpacity}">
           <div style="font-size:10px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Hausaufgaben</div>
           <div contenteditable="true"
             data-rkey="${r._key}" data-feld="hausaufgaben"
@@ -1487,7 +1497,7 @@ function kdRenderUnterricht() {
         </div>
 
         <!-- Notiz -->
-        <div style="padding:10px 12px;background:${rowBg};">
+        <div style="padding:10px 12px;background:${rowBg};${rowOpacity}">
           <div style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Notiz</div>
           <div contenteditable="true"
             data-rkey="${r._key}" data-feld="notiz"
@@ -1527,6 +1537,7 @@ async function kdSpeichereUnterrichtZelle(el) {
     inhalt: row.inhalt || '',
     hausaufgaben: row.hausaufgaben || '',
     notiz: row.notiz || '',
+    ausgefallen: row.ausgefallen || false,
   };
 
   const rows = [upsertData];
@@ -1546,6 +1557,32 @@ async function kdSpeichereUnterrichtZelle(el) {
     el.style.outline = '2px solid #86efac';
     setTimeout(() => { el.style.background = 'transparent'; el.style.outline = 'none'; }, 700);
   }
+}
+
+async function kdToggleAusgefallen(rkey) {
+  const row = kdUnterricht.find(r => r._key === rkey);
+  if (!row) return;
+  row.ausgefallen = !row.ausgefallen;
+
+  const upsertData = {
+    wochentag: row.wochentag, stunde: row.stunde,
+    kalenderwoche: row.kalenderwoche, jahr: row.jahr,
+    klasse_id: kdAktiveKlasseId,
+    fach: row.fach || null,
+    inhalt: row.inhalt || '',
+    hausaufgaben: row.hausaufgaben || '',
+    notiz: row.notiz || '',
+    ausgefallen: row.ausgefallen,
+  };
+  const rows = [upsertData];
+  if (row._isDoppelstunde && row._doppelstundeEnde) {
+    rows.push({ ...upsertData, stunde: row._doppelstundeEnde });
+    // also update the partner row in kdUnterricht memory
+    const partner = kdUnterricht.find(r => r.kalenderwoche === row.kalenderwoche && r.jahr === row.jahr && r.wochentag === row.wochentag && r.stunde === row._doppelstundeEnde);
+    if (partner) partner.ausgefallen = row.ausgefallen;
+  }
+  await sb.from('unterrichtsplanung').upsert(rows, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' });
+  kdRenderUnterricht();
 }
 
 // ── Anwesenheit-Tab ──────────────────────────────────────────────
@@ -3444,6 +3481,7 @@ function renderUpTag(tagNr) {
     const fachGeaendert = (plan.fach != null) && plan.fach !== sp.fach;
     const klasseGeaendert = (plan.klasse_id != null) && plan.klasse_id !== sp.klasse_id;
     const dotColor = effKlasseObj?.farbe || '#d1d5db';
+    const isAusgefallen = !!plan.ausgefallen;
 
     const tagStyle = `display:flex;align-items:stretch;border:1px solid var(--gray-200);border-radius:4px;overflow:hidden;margin-bottom:4px;`;
     const tagLabelStyle = (bg, color) => `flex:0 0 38px;width:38px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;background:${bg};color:${color};border-right:1px solid var(--gray-200);letter-spacing:.03em;text-transform:uppercase;`;
@@ -3452,10 +3490,10 @@ function renderUpTag(tagNr) {
 
     const dsBorder = isDSStart ? 'border-left:3px solid #f59e0b;' : '';
     html += `
-      <div style="display:flex;width:100%;box-sizing:border-box;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}${dsBorder}">
+      <div style="display:flex;width:100%;box-sizing:border-box;${!isLast ? 'border-bottom:2px solid var(--gray-200);' : ''}${isLZ ? 'background:var(--gray-50);' : ''}${isAusgefallen ? 'background:#fff5f5;' : ''}${dsBorder}">
         <div style="flex:0 0 ${leftW};width:${leftW};min-width:0;padding:10px 12px;border-right:1px solid var(--gray-200);display:flex;flex-direction:column;gap:5px;justify-content:center;">
           <div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap;">
-            <span style="font-weight:600;font-size:0.9rem;${isLZ ? 'color:var(--gray-400);' : ''}">${dsLabel}</span>
+            <span style="font-weight:600;font-size:0.9rem;${isLZ ? 'color:var(--gray-400);' : ''}${isAusgefallen ? 'text-decoration:line-through;color:#b91c1c;' : ''}">${dsLabel}</span>
             ${isDSStart ? '<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:8px;font-weight:700;">2h</span>' : ''}
             <span style="font-size:10px;color:var(--gray-400);">${dsZeit}</span>
           </div>
@@ -3473,8 +3511,12 @@ function renderUpTag(tagNr) {
             ${upAllKlassen.map(k => `<option value="${k.id}" ${effKlasseId===k.id?'selected':''}>${k.name}</option>`).join('')}
           </select>
           ${(fachGeaendert||klasseGeaendert) ? `<span style="font-size:9px;color:#f59e0b;font-weight:600;">✏ abgeändert</span>` : ''}
+          <button onclick="upToggleAusgefallen(${tagNr},${stunde})"
+            style="padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;width:100%;box-sizing:border-box;${isAusgefallen ? 'background:#fee2e2;color:#b91c1c;border:1.5px solid #fca5a5;' : 'background:var(--gray-100);color:var(--gray-500);border:1.5px solid var(--gray-200);'}">
+            ${isAusgefallen ? '↩ Wiederherstellen' : '✕ Ausgefallen'}
+          </button>
         </div>
-        <div style="flex:1;min-width:0;padding:8px 10px;display:flex;flex-direction:column;gap:4px;${isLZ ? 'background:var(--gray-50);' : ''}">
+        <div style="flex:1;min-width:0;padding:8px 10px;display:flex;flex-direction:column;gap:4px;${isLZ ? 'background:var(--gray-50);' : ''}${isAusgefallen ? 'opacity:0.4;pointer-events:none;' : ''}">
           <div style="${tagStyle}">
             <span style="${tagLabelStyle('#dbeafe','#1e40af')}">Inhalt</span>
             <textarea style="${inpStyle}" rows="2" placeholder="Was wurde erarbeitet, besprochen, geübt…"
@@ -3528,6 +3570,7 @@ async function upSaveZeile(tagNr, stunde) {
     inhalt: row.inhalt || '',
     hausaufgaben: row.hausaufgaben || '',
     notiz: row.notiz || '',
+    ausgefallen: row.ausgefallen || false,
   };
   // Fach/Klasse nur speichern wenn explizit geändert (null = zurücksetzen auf SP-Default)
   if ('fach' in row) upsertData.fach = row.fach || null;
@@ -3549,6 +3592,30 @@ async function upSaveZeile(tagNr, stunde) {
     ind.textContent = error ? '❌ Fehler' : '✓ gespeichert';
     setTimeout(() => { if (ind) ind.textContent = ''; }, 2000);
   }
+}
+
+async function upToggleAusgefallen(tagNr, stunde) {
+  const key = `${tagNr}-${stunde}`;
+  if (!upPlanDaten[key]) upPlanDaten[key] = { wochentag: tagNr, stunde, kalenderwoche: upKW, jahr: upJahr };
+  upPlanDaten[key].ausgefallen = !upPlanDaten[key].ausgefallen;
+
+  const upsertData = {
+    wochentag: tagNr, stunde, kalenderwoche: upKW, jahr: upJahr,
+    inhalt: upPlanDaten[key].inhalt || '',
+    hausaufgaben: upPlanDaten[key].hausaufgaben || '',
+    notiz: upPlanDaten[key].notiz || '',
+    ausgefallen: upPlanDaten[key].ausgefallen,
+  };
+  if ('fach' in upPlanDaten[key]) upsertData.fach = upPlanDaten[key].fach || null;
+  if ('klasse_id' in upPlanDaten[key]) upsertData.klasse_id = upPlanDaten[key].klasse_id || null;
+
+  const doppelstunden = upEinst.doppelstunden || [];
+  const isDSStart = doppelstunden.some(d => d.wochentag === tagNr && d.stunde === stunde);
+  const rows = [upsertData];
+  if (isDSStart) rows.push({ ...upsertData, stunde: stunde + 1 });
+
+  await sb.from('unterrichtsplanung').upsert(rows, { onConflict: 'wochentag,stunde,kalenderwoche,jahr' });
+  renderUpTag(tagNr);
 }
 
 // ── Init ──
