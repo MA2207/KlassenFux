@@ -563,6 +563,7 @@
       <button data-kd-tab="unterricht" onclick="kdZeigeUnterseite('unterricht')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📚 Unterricht</button>
       <button data-kd-tab="anwesenheit" onclick="kdZeigeUnterseite('anwesenheit')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">👥 Anwesenheit</button>
       <button data-kd-tab="hausaufgaben" onclick="kdZeigeUnterseite('hausaufgaben')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">📝 Hausaufgaben</button>
+      <button data-kd-tab="beobachtung" onclick="kdZeigeUnterseite('beobachtung')" style="padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:400;background:transparent;color:var(--gray-500);">🔍 Beobachtung</button>
     </div>
     <div id="kd-content"></div>
   </div>
@@ -1091,6 +1092,11 @@ let kdHaAktStunde = null;
 let kdHaAnsicht = 'erfassen'; // 'erfassen' | 'uebersicht'
 let kdHaFachFilter = null;
 let kdHaUebFachFilter = null;
+let kdUb = [];
+let kdUbAktStunde = null;
+let kdUbAnsicht = 'erfassen';
+let kdUbFachFilter = null;
+let kdUbUebFachFilter = null;
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
   // Aktuelle KW suchen, sonst nächste verfügbare
@@ -1120,9 +1126,13 @@ async function kdOeffneKlasse(klasseId) {
   kdHaAnsicht = 'erfassen';
   kdHaFachFilter = null;
   kdHaUebFachFilter = null;
+  kdUbAktStunde = null;
+  kdUbAnsicht = 'erfassen';
+  kdUbFachFilter = null;
+  kdUbUebFachFilter = null;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
-  await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben()]);
+  await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung()]);
   kdZeigeUnterseite('checkliste');
 }
 
@@ -1139,6 +1149,7 @@ function kdZeigeUnterseite(seite) {
   if (seite === 'unterricht') { kdLadeUnterricht().then(() => kdRenderUnterricht()); }
   if (seite === 'anwesenheit') { kdLadeAnwesenheit().then(() => kdRenderAnwesenheit()); }
   if (seite === 'hausaufgaben') { kdLadeHausaufgaben().then(() => kdRenderHausaufgaben()); }
+  if (seite === 'beobachtung') { kdLadeBeobachtung().then(() => kdRenderBeobachtung()); }
 }
 
 async function kdLadeCheckliste() {
@@ -2319,6 +2330,316 @@ function kdRenderHaUebersicht(alleStunden) {
       <span><span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:10px;font-weight:700;">V</span> Vergessen</span>
       <span><span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-weight:700;">N</span> Nachgereicht</span>
       <span style="color:var(--gray-400);">% = HA-Quote (Nachgereichte zählen als vergessen)</span>
+    </div>`;
+  return html;
+}
+
+// ── Unterrichtsbeobachtung-Tab ────────────────────────────────────
+async function kdLadeBeobachtung() {
+  const heute = new Date();
+  const sjJahr = heute.getMonth() >= 8 ? heute.getFullYear() : heute.getFullYear() - 1;
+  const { data, error } = await supabase
+    .from('unterrichtsbeobachtung')
+    .select('*')
+    .eq('klasse_id', kdAktiveKlasseId)
+    .gte('jahr', sjJahr);
+  if (!error) kdUb = data || [];
+}
+
+function kdUbSetStunde(kw, jahr, wochentag, stunde) { kdUbAktStunde = { kw, jahr, wochentag, stunde }; kdRenderBeobachtung(); }
+function kdUbSetFach(fach) { kdUbFachFilter = fach || null; kdUbAktStunde = null; kdRenderBeobachtung(); }
+function kdUbSetUebFach(fach) { kdUbUebFachFilter = fach || null; kdRenderBeobachtung(); }
+function kdUbSetAnsicht(a) { kdUbAnsicht = a; kdRenderBeobachtung(); }
+
+async function kdUbToggle(schuelerId) {
+  if (!kdUbAktStunde) return;
+  const { kw, jahr, wochentag, stunde } = kdUbAktStunde;
+  const states = ['gut', 'schlecht', 'neutral'];
+
+  const aktLesson = kdUnterricht.find(r =>
+    r.kalenderwoche === kw && r.jahr === jahr && r.wochentag === wochentag && r.stunde === stunde
+  );
+  const partnerStunde = (aktLesson?._isDoppelstunde && aktLesson?._doppelstundeEnde)
+    ? aktLesson._doppelstundeEnde : null;
+
+  async function kdUbSetStatus(std, newStatus) {
+    const existing = kdUb.find(r =>
+      r.schueler_id === schuelerId && r.kalenderwoche === kw &&
+      r.jahr === jahr && r.wochentag === wochentag && r.stunde === std
+    );
+    if (newStatus === null) {
+      if (existing) await supabase.from('unterrichtsbeobachtung').delete().eq('id', existing.id);
+    } else if (existing) {
+      await supabase.from('unterrichtsbeobachtung').update({ status: newStatus }).eq('id', existing.id);
+    } else {
+      await supabase.from('unterrichtsbeobachtung').insert({
+        klasse_id: kdAktiveKlasseId, schueler_id: schuelerId,
+        kalenderwoche: kw, jahr, wochentag, stunde: std, status: newStatus
+      });
+    }
+  }
+
+  const cur = kdUb.find(r =>
+    r.schueler_id === schuelerId && r.kalenderwoche === kw &&
+    r.jahr === jahr && r.wochentag === wochentag && r.stunde === stunde
+  );
+  const curIdx = cur ? states.indexOf(cur.status) : -1;
+  const newStatus = curIdx < states.length - 1 ? states[curIdx + 1] : null;
+
+  await kdUbSetStatus(stunde, newStatus);
+  if (partnerStunde) await kdUbSetStatus(partnerStunde, newStatus);
+  await kdLadeBeobachtung();
+  kdRenderBeobachtung();
+}
+
+function kdRenderBeobachtung() {
+  const container = document.getElementById('kd-content');
+  if (kdAktiveUnterseite !== 'beobachtung') return;
+
+  const heute = new Date();
+  const heuteEnde = new Date(heute); heuteEnde.setUTCHours(23, 59, 59, 999);
+  const alleStunden = kdUnterricht.slice();
+
+  const tabBtnStyle = (a) => kdUbAnsicht === a
+    ? 'background:#1d4ed8;color:white;border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+    : 'background:transparent;color:var(--gray-500);border:none;padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;';
+
+  let html = `
+    <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;width:fit-content;margin-bottom:16px;">
+      <button onclick="kdUbSetAnsicht('erfassen')" style="${tabBtnStyle('erfassen')}">📝 Erfassen</button>
+      <button onclick="kdUbSetAnsicht('uebersicht')" style="${tabBtnStyle('uebersicht')}">📊 Übersicht</button>
+    </div>`;
+
+  html += kdUbAnsicht === 'erfassen'
+    ? kdRenderUbErfassen(alleStunden)
+    : kdRenderUbUebersicht(alleStunden);
+
+  container.innerHTML = html;
+}
+
+function kdRenderUbErfassen(alleStunden) {
+  if (alleStunden.length === 0)
+    return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Unterrichtsstunden geplant.</div>`;
+
+  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  let html = '';
+  if (alleFaecher.length > 1) {
+    const chipStyle = (f) => f === kdUbFachFilter
+      ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
+      : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
+    html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);">Fach:</span>
+      <button onclick="kdUbSetFach(null)" style="${chipStyle(null)}">Alle</button>
+      ${alleFaecher.map(f => `<button onclick="kdUbSetFach('${f.replace(/'/g,"\\'")}')" style="${chipStyle(f)}">${f}</button>`).join('')}
+    </div>`;
+  }
+
+  const gefiltert = kdUbFachFilter
+    ? alleStunden.filter(r => (r.fach || r._spFach) === kdUbFachFilter)
+    : alleStunden;
+
+  // Doppelstunden-Partner ausblenden
+  const dsPartnerKeys = new Set();
+  gefiltert.forEach(r => {
+    if (r._isDoppelstunde && r._doppelstundeEnde)
+      dsPartnerKeys.add(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r._doppelstundeEnde}`);
+  });
+  const sichtbareStunden = gefiltert.filter(r =>
+    !dsPartnerKeys.has(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
+  );
+
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+  const selectStyle = (r) => {
+    const k = `${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+    const aktK = kdUbAktStunde ? `${kdUbAktStunde.kw}-${kdUbAktStunde.jahr}-${kdUbAktStunde.wochentag}-${kdUbAktStunde.stunde}` : '';
+    return k === aktK
+      ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;'
+      : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
+  };
+
+  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">`;
+  sichtbareStunden.forEach(r => {
+    const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+    const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
+    const fach = r.fach || r._spFach || '';
+    const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std.` : `${r.stunde}. Std.`;
+    html += `<button onclick="kdUbSetStunde(${r.kalenderwoche},${r.jahr},${r.wochentag},${r.stunde})"
+      style="padding:6px 12px;border-radius:10px;cursor:pointer;font-size:11px;font-weight:600;${selectStyle(r)}">
+      ${wdKurz[r.wochentag]} ${datumStr}<br><span style="font-weight:400;">${fach} ${stdLabel}</span>
+    </button>`;
+  });
+  html += `</div>`;
+
+  if (!kdUbAktStunde) {
+    html += `<div style="text-align:center;padding:30px;color:var(--gray-400);">Wähle eine Stunde aus.</div>`;
+    return html;
+  }
+
+  if (kdSchueler.length === 0) {
+    html += `<div style="text-align:center;padding:30px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
+    return html;
+  }
+
+  const { kw, jahr, wochentag, stunde } = kdUbAktStunde;
+  const ubMap = {};
+  kdUb.filter(r => r.kalenderwoche===kw && r.jahr===jahr && r.wochentag===wochentag && r.stunde===stunde)
+    .forEach(r => { ubMap[r.schueler_id] = r.status; });
+
+  const statCfg = {
+    gut:      { label:'👍 Gut',     bg:'#dcfce7', color:'#166534', border:'#86efac' },
+    schlecht: { label:'👎 Schlecht',bg:'#fee2e2', color:'#991b1b', border:'#fca5a5' },
+    neutral:  { label:'➖ Neutral', bg:'#f3f4f6', color:'#374151', border:'#d1d5db' },
+  };
+
+  // Zusammenfassung
+  const counts = { gut:0, schlecht:0, neutral:0 };
+  kdSchueler.forEach(s => { if (ubMap[s.id]) counts[ubMap[s.id]]++; });
+  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+    <span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;">👍 ${counts.gut}</span>
+    <span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;">👎 ${counts.schlecht}</span>
+    <span style="background:#f3f4f6;color:#374151;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;">➖ ${counts.neutral}</span>
+    <span style="color:var(--gray-400);font-size:12px;align-self:center;">${kdSchueler.length - counts.gut - counts.schlecht - counts.neutral} nicht erfasst</span>
+  </div>`;
+
+  html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+  kdSchueler.forEach(s => {
+    const status = ubMap[s.id] || null;
+    const cfg = status ? statCfg[status] : null;
+    const btnStyle = cfg
+      ? `background:${cfg.bg};color:${cfg.color};border:2px solid ${cfg.border};`
+      : 'background:var(--white);color:var(--gray-400);border:2px solid var(--gray-200);';
+    const label = cfg ? cfg.label : '— Nicht erfasst';
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--white);border:1px solid var(--gray-100);border-radius:10px;">
+      <span style="font-size:13px;font-weight:600;color:var(--gray-800);">${s.nachname}, ${s.vorname}</span>
+      <button onclick="kdUbToggle('${s.id}')" style="${btnStyle}padding:4px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+        ${label}
+      </button>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+function kdRenderUbUebersicht(alleStunden) {
+  if (kdSchueler.length === 0)
+    return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
+
+  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  let html = '';
+  if (alleFaecher.length > 1) {
+    const chipStyle = (f) => f === kdUbUebFachFilter
+      ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;'
+      : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;';
+    html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-500);">Fach:</span>
+      <button onclick="kdUbSetUebFach(null)" style="${chipStyle(null)}">Alle</button>
+      ${alleFaecher.map(f => `<button onclick="kdUbSetUebFach('${f.replace(/'/g,"\\'")}')" style="${chipStyle(f)}">${f}</button>`).join('')}
+    </div>`;
+  }
+
+  const gefiltert = kdUbUebFachFilter
+    ? alleStunden.filter(r => (r.fach || r._spFach) === kdUbUebFachFilter)
+    : alleStunden;
+
+  if (gefiltert.length === 0)
+    return html + `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Stunden für dieses Fach gefunden.</div>`;
+
+  const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
+
+  // Doppelstunden-Partner für Tabellenspalten zusammenführen
+  const dsPartnerKeysUeb = new Set();
+  gefiltert.forEach(r => {
+    if (r._isDoppelstunde && r._doppelstundeEnde)
+      dsPartnerKeysUeb.add(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r._doppelstundeEnde}`);
+  });
+  const tabellenSpalten = gefiltert.filter(r =>
+    !dsPartnerKeysUeb.has(`${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`)
+  );
+
+  // Vergangene Stunden für Prozentberechnung
+  const jetzt = new Date(); jetzt.setUTCHours(23, 59, 59, 999);
+  const vergangeneGefiltert = gefiltert.filter(r => kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag) <= jetzt);
+  const totalStunden = vergangeneGefiltert.length;
+
+  // Lookup
+  const ubLookup = {};
+  kdUb.forEach(a => {
+    ubLookup[`${a.schueler_id}-${a.kalenderwoche}-${a.jahr}-${a.wochentag}-${a.stunde}`] = a.status;
+  });
+
+  // Counts aus allen Stunden (auch zukünftige), Score nur aus vergangenen
+  const sum = {};
+  kdSchueler.forEach(s => { sum[s.id] = { gut:0, schlecht:0, neutral:0 }; });
+  gefiltert.forEach(r => {
+    kdSchueler.forEach(s => {
+      const status = ubLookup[`${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`];
+      if (status && sum[s.id]) sum[s.id][status] = (sum[s.id][status] || 0) + 1;
+    });
+  });
+
+  const statusKurz = {
+    gut:      { text:'👍', bg:'#dcfce7', color:'#166534', title:'Gute Mitarbeit' },
+    schlecht: { text:'👎', bg:'#fee2e2', color:'#991b1b', title:'Schlechte Mitarbeit' },
+    neutral:  { text:'➖', bg:'#f3f4f6', color:'#374151', title:'Neutral' },
+  };
+
+  html += `<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--gray-200);">
+    <table style="border-collapse:collapse;min-width:max-content;width:100%;">
+      <thead><tr>
+        <th style="position:sticky;left:0;z-index:2;background:var(--gray-800);color:white;padding:8px 14px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;min-width:190px;">Schüler/in</th>
+        ${tabellenSpalten.map(r => {
+          const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
+          const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
+          const fach = r.fach || r._spFach;
+          const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
+          return `<th style="background:var(--gray-800);color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''}">
+            <div style="font-weight:700;">${wdKurz[r.wochentag]}</div>
+            <div style="opacity:0.7;">${datumStr}</div>
+            <div style="opacity:0.5;">${stdLabel}</div>
+          </th>`;
+        }).join('')}
+      </tr></thead>
+      <tbody>`;
+
+  kdSchueler.forEach((s, idx) => {
+    const rowBg = idx % 2 === 0 ? 'white' : '#fafafa';
+    const st = sum[s.id];
+    const gut = st.gut, schlecht = st.schlecht, neutral = st.neutral;
+    const score = totalStunden > 0 ? Math.round(gut / totalStunden * 100) : 100;
+    const scoreColor = score >= 80 ? '#15803d' : score >= 50 ? '#b45309' : '#991b1b';
+
+    const badges = [
+      gut      ? `<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Gute Mitarbeit">${gut}×👍</span>` : '',
+      schlecht ? `<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Schlechte Mitarbeit">${schlecht}×👎</span>` : '',
+      neutral  ? `<span style="background:#f3f4f6;color:#374151;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;" title="Neutral">${neutral}×➖</span>` : '',
+      `<span style="color:${scoreColor};font-size:10px;font-weight:700;" title="Mitarbeit-Score">${score}%</span>`,
+    ].filter(Boolean).join(' ');
+
+    html += `<tr>
+      <td style="position:sticky;left:0;z-index:1;background:${rowBg};padding:7px 14px;border-bottom:1px solid var(--gray-100);">
+        <div style="font-size:12px;font-weight:600;color:var(--gray-800);white-space:nowrap;">${s.nachname}, ${s.vorname}</div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;">
+          ${(gut || schlecht || neutral) ? badges : `<span style="font-size:10px;color:#16a34a;font-weight:600;">✓ 100%</span>`}
+        </div>
+      </td>
+      ${tabellenSpalten.map(r => {
+        const key = `${s.id}-${r.kalenderwoche}-${r.jahr}-${r.wochentag}-${r.stunde}`;
+        const status = ubLookup[key];
+        if (!status) return `<td style="background:${rowBg};border-bottom:1px solid var(--gray-100);"></td>`;
+        const cfg = statusKurz[status];
+        return `<td style="background:${cfg.bg};border-bottom:1px solid var(--gray-100);text-align:center;" title="${cfg.title}${r._isDoppelstunde?' (Doppelstunde)':''}">
+          <span style="font-size:13px;">${cfg.text}${r._isDoppelstunde?'²':''}</span>
+        </td>`;
+      }).join('')}
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>
+    <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--gray-500);">
+      <span>👍 Gute Mitarbeit</span>
+      <span>👎 Schlechte Mitarbeit</span>
+      <span>➖ Neutral</span>
+      <span style="color:var(--gray-400);">% = Anteil guter Mitarbeit an stattgefundenen Stunden</span>
     </div>`;
   return html;
 }
