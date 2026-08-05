@@ -1144,6 +1144,7 @@ let kdNotenUnterkat = null;
 let kdNotenEingabeart = 'direkt'; // 'direkt' | 'punkte'
 let kdNotenSchluesselIndex = 0;
 let kdNotenAktEintragId = null; // gesetzt = Bearbeitungsmodus
+let kdNotenMaskeOffen = false;  // true = Eingabemaske sichtbar
 
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
@@ -1188,6 +1189,7 @@ async function kdOeffneKlasse(klasseId) {
   kdNotenEingabeart = 'direkt';
   kdNotenSchluesselIndex = 0;
   kdNotenAktEintragId = null;
+  kdNotenMaskeOffen = false;
   document.getElementById('kd-titel').textContent = klasse.name;
   showPage('klasse-detail');
   await Promise.all([kdLadeCheckliste(), kdLadeUnterricht(), kdLadeAnwesenheit(), kdLadeHausaufgaben(), kdLadeBeobachtung(), kdLadeNoten()]);
@@ -2817,7 +2819,7 @@ function kdNotenProzentZuNote(prozent, schluesselIndex) {
   return KD_NOTEN_CODES[KD_NOTEN_CODES.length - 1];
 }
 
-function kdNotenSetAnsicht(a) { kdNotenAnsicht = a; kdNotenAktEintragId = null; kdRenderNoten(); }
+function kdNotenSetAnsicht(a) { kdNotenAnsicht = a; kdNotenAktEintragId = null; kdNotenMaskeOffen = false; kdRenderNoten(); }
 function kdNotenSetFach(fach) { kdNotenFach = fach || null; kdNotenHauptkat = null; kdNotenUnterkat = null; kdRenderNoten(); }
 function kdNotenSetHauptkat(name) { kdNotenHauptkat = name || null; kdNotenUnterkat = null; kdRenderNoten(); }
 function kdNotenSetUnterkat(name) { kdNotenUnterkat = name || null; kdRenderNoten(); }
@@ -2840,9 +2842,25 @@ function kdNotenGesamtpunktzahlAktualisieren() {
   document.querySelectorAll('[data-ne-punkte]').forEach(inp => kdNotenZeileAktualisieren(inp));
 }
 
+function kdNotenMaskeOeffnen() {
+  kdNotenMaskeOffen = true;
+  kdNotenAktEintragId = null;
+  kdNotenHauptkat = null;
+  kdNotenUnterkat = null;
+  kdNotenEingabeart = 'direkt';
+  kdRenderNoten();
+}
+
+function kdNotenMaskeSchliessen() {
+  kdNotenMaskeOffen = false;
+  kdNotenAktEintragId = null;
+  kdRenderNoten();
+}
+
 function kdNotenEintragBearbeiten(id) {
   const eintrag = kdNotenEintraege.find(e => e.id === id);
   if (!eintrag) return;
+  kdNotenMaskeOffen = true;
   kdNotenAktEintragId = id;
   kdNotenFach = eintrag.fach;
   kdNotenHauptkat = eintrag.hauptkategorie;
@@ -2853,15 +2871,10 @@ function kdNotenEintragBearbeiten(id) {
   kdRenderNoten();
 }
 
-function kdNotenEintragAbbrechen() {
-  kdNotenAktEintragId = null;
-  kdRenderNoten();
-}
-
 async function kdNotenEintragLoeschen(id) {
   if (!confirm('Diesen Noteneintrag wirklich löschen?')) return;
   await sb.from('noteneintraege').delete().eq('id', id);
-  if (kdNotenAktEintragId === id) kdNotenAktEintragId = null;
+  if (kdNotenAktEintragId === id) { kdNotenAktEintragId = null; kdNotenMaskeOffen = false; }
   await kdLadeNoten();
   kdRenderNoten();
 }
@@ -2924,6 +2937,7 @@ async function kdNotenEintragSpeichern() {
 
   showToast(kdNotenAktEintragId ? 'Noteneintrag aktualisiert.' : 'Noteneintrag gespeichert.', 'success');
   kdNotenAktEintragId = null;
+  kdNotenMaskeOffen = false;
   await kdLadeNoten();
   kdRenderNoten();
 }
@@ -2948,12 +2962,20 @@ function kdRenderNotenEingabe() {
   }
   if (!kdNotenFach || !faecher.includes(kdNotenFach)) kdNotenFach = faecher[0];
 
+  // Landing-Ansicht: Fach wählen, Button "Noten eintragen", darunter alle bestehenden Einträge
+  if (!kdNotenMaskeOffen) {
+    let html = `<div style="margin-bottom:16px;">${kdRenderNotenFachChips(faecher)}</div>`;
+    html += `<button class="btn btn-primary" onclick="kdNotenMaskeOeffnen()" style="margin-bottom:22px;">➕ Noten eintragen</button>`;
+    html += kdRenderNotenListe();
+    return html;
+  }
+
   const hauptkategorien = kdNotenHauptkategorien(kdNotenFach);
   if (hauptkategorien.length === 0) {
     return `
-      <div style="margin-bottom:16px;">${kdRenderNotenFachChips(faecher)}</div>
       <div style="text-align:center;padding:32px 24px;color:var(--gray-500);">
         <div style="font-size:13px;">Für <strong>${kdNotenFach}</strong> sind noch keine Hauptkategorien konfiguriert. Bitte unter Einstellungen → Notenkonfiguration anlegen.</div>
+        <button onclick="kdNotenMaskeSchliessen()" class="btn btn-secondary btn-sm" style="margin-top:12px;">Zurück</button>
       </div>`;
   }
   if (!kdNotenHauptkat || !hauptkategorien.some(h => h.name === kdNotenHauptkat)) kdNotenHauptkat = hauptkategorien[0].name;
@@ -2972,16 +2994,10 @@ function kdRenderNotenEingabe() {
   const gesamtpunktzahlVal = bearbeiteterEintrag?.gesamtpunktzahl ?? '';
   const schluesselListe = kdNotenSchluesselListe();
 
-  let html = '';
-
-  if (bearbeiteterEintrag) {
-    html += `<div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:#92400e;display:flex;justify-content:space-between;align-items:center;">
-      <span>✏️ Du bearbeitest einen bestehenden Noteneintrag.</span>
-      <button onclick="kdNotenEintragAbbrechen()" style="background:none;border:none;color:#92400e;text-decoration:underline;cursor:pointer;font-size:12px;">Abbrechen</button>
-    </div>`;
-  }
-
-  html += `<div style="margin-bottom:14px;">${kdRenderNotenFachChips(faecher)}</div>`;
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div style="font-size:13px;font-weight:700;color:var(--gray-600);">${bearbeiteterEintrag ? '✏️ Noteneintrag bearbeiten' : '➕ Neuer Noteneintrag'} · ${kdNotenFach}</div>
+    <button onclick="kdNotenMaskeSchliessen()" style="background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:12px;">✖ Schließen</button>
+  </div>`;
 
   html += `<div style="margin-bottom:14px;">
     <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Hauptkategorie:</label>
@@ -3078,23 +3094,40 @@ function kdRenderNotenEingabe() {
     ${bearbeiteterEintrag ? `<button class="btn btn-secondary" onclick="kdNotenEintragLoeschen('${bearbeiteterEintrag.id}')" style="color:#dc2626;">🗑 Eintrag löschen</button>` : ''}
   </div>`;
 
-  const relevanteEintraege = kdNotenEintraege.filter(e => e.fach === kdNotenFach && e.hauptkategorie === kdNotenHauptkat);
-  if (relevanteEintraege.length > 0) {
-    html += `<div style="margin-top:28px;">
-      <div style="font-size:13px;font-weight:700;color:var(--gray-600);margin-bottom:8px;">Bestehende Einträge in dieser Kategorie:</div>
-      ${relevanteEintraege.map(e => {
-        const datumStr = e.datum ? new Date(e.datum + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:6px;">
-          <span style="font-size:13px;">${e.titel || '(ohne Titel)'} ${e.unterkategorie ? `· ${e.unterkategorie}` : ''} <span style="color:var(--gray-400);">· ${datumStr}</span></span>
-          <div style="display:flex;gap:8px;">
-            <button onclick="kdNotenEintragBearbeiten('${e.id}')" style="background:none;border:none;color:#1d4ed8;cursor:pointer;font-size:12px;font-weight:600;">Bearbeiten</button>
-            <button onclick="kdNotenEintragLoeschen('${e.id}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;">🗑</button>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`;
-  }
+  return html;
+}
 
+function kdRenderNotenListe() {
+  if (kdNotenEintraege.length === 0) {
+    return `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:13px;">Noch keine Noten eingetragen.</div>`;
+  }
+  const sortiert = [...kdNotenEintraege].sort((a, b) => {
+    if (a.fach !== b.fach) return a.fach.localeCompare(b.fach, 'de');
+    if (a.hauptkategorie !== b.hauptkategorie) return a.hauptkategorie.localeCompare(b.hauptkategorie, 'de');
+    const ua = a.unterkategorie || '', ub = b.unterkategorie || '';
+    if (ua !== ub) return ua.localeCompare(ub, 'de');
+    return (b.datum || '').localeCompare(a.datum || '');
+  });
+
+  let html = '<div>';
+  let letzteGruppe = null;
+  sortiert.forEach(e => {
+    const gruppe = `${e.fach} · ${e.hauptkategorie}${e.unterkategorie ? ' · ' + e.unterkategorie : ''}`;
+    if (gruppe !== letzteGruppe) {
+      html += `<div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.03em;margin:${letzteGruppe ? '18px' : '0'} 0 6px;">${gruppe}</div>`;
+      letzteGruppe = gruppe;
+    }
+    const datumStr = e.datum ? new Date(e.datum + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+    const anzahlNoten = kdNotenWerte.filter(w => w.noteneintrag_id === e.id).length;
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:6px;">
+      <span style="font-size:13px;">${e.titel || '(ohne Titel)'} <span style="color:var(--gray-400);">· ${datumStr} · ${anzahlNoten} Note${anzahlNoten === 1 ? '' : 'n'}</span></span>
+      <div style="display:flex;gap:8px;">
+        <button onclick="kdNotenEintragBearbeiten('${e.id}')" style="background:none;border:none;color:#1d4ed8;cursor:pointer;font-size:12px;font-weight:600;">Bearbeiten</button>
+        <button onclick="kdNotenEintragLoeschen('${e.id}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;">🗑</button>
+      </div>
+    </div>`;
+  });
+  html += '</div>';
   return html;
 }
 
