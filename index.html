@@ -2338,7 +2338,7 @@ function kdRenderHaUebersicht(alleStunden) {
 async function kdLadeBeobachtung() {
   const heute = new Date();
   const sjJahr = heute.getMonth() >= 8 ? heute.getFullYear() : heute.getFullYear() - 1;
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('unterrichtsbeobachtung')
     .select('*')
     .eq('klasse_id', kdAktiveKlasseId)
@@ -2368,11 +2368,11 @@ async function kdUbToggle(schuelerId) {
       r.jahr === jahr && r.wochentag === wochentag && r.stunde === std
     );
     if (newStatus === null) {
-      if (existing) await supabase.from('unterrichtsbeobachtung').delete().eq('id', existing.id);
+      if (existing) await sb.from('unterrichtsbeobachtung').delete().eq('id', existing.id);
     } else if (existing) {
-      await supabase.from('unterrichtsbeobachtung').update({ status: newStatus }).eq('id', existing.id);
+      await sb.from('unterrichtsbeobachtung').update({ status: newStatus }).eq('id', existing.id);
     } else {
-      await supabase.from('unterrichtsbeobachtung').insert({
+      await sb.from('unterrichtsbeobachtung').insert({
         klasse_id: kdAktiveKlasseId, schueler_id: schuelerId,
         kalenderwoche: kw, jahr, wochentag, stunde: std, status: newStatus
       });
