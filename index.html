@@ -1641,7 +1641,7 @@ function kdRenderAnwesenheit() {
 
   html += kdAnwAnsicht === 'erfassen'
     ? kdRenderAnwErfassen(vergangenStunden)
-    : kdRenderAnwUebersicht(vergangenFuerUebersicht);
+    : kdRenderAnwUebersicht(vergangenStunden);
 
   container.innerHTML = html;
 }
