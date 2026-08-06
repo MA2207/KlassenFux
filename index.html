@@ -16,6 +16,7 @@
   <meta name="theme-color" content="#16a34a">
   <title>KlassenFux</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -425,6 +426,9 @@
     <button class="nav-item" onclick="showPage('einstellungen')">
       <span class="nav-icon">⚙️</span> Einstellungen
     </button>
+    <button class="nav-item" onclick="showPage('import-export')">
+      <span class="nav-icon">🔄</span> Import/Export
+    </button>
   </nav>
 </div>
 
@@ -763,6 +767,31 @@
 
   </div>
 
+  <!-- IMPORT / EXPORT -->
+  <div id="page-import-export" class="hidden">
+    <div class="page-header">
+      <div class="page-title">Import / Export</div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">📥 Schüler importieren</div>
+      <p style="font-size:0.85rem;color:var(--gray-400);margin:0 0 14px;">
+        Lade eine Excel-Datei (.xlsx) mit deinen Schülerdaten hoch. Am einfachsten lädst du dir zuerst die Beispiel-Datei
+        herunter und trägst deine Daten in genau diesem Format ein — die Spaltenreihenfolge muss dabei erhalten bleiben.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
+        <button class="btn btn-secondary" onclick="kdImportBeispielHerunterladen()">📄 Beispiel-Datei herunterladen</button>
+        <label class="btn btn-primary" style="cursor:pointer;">
+          📁 Excel-Datei auswählen…
+          <input type="file" accept=".xlsx,.xls" onchange="kdImportDateiAusgewaehlt(event)" style="display:none;">
+        </label>
+      </div>
+
+      <div id="import-datei-name" style="font-size:0.85rem;color:var(--gray-600);margin-bottom:10px;"></div>
+      <div id="import-vorschau"></div>
+      <div id="import-ergebnis" style="margin-top:14px;"></div>
+    </div>
+  </div>
 
   <!-- UNTERRICHTSPLANUNG -->
   <div id="page-unterrichtsplanung" class="hidden">
@@ -903,6 +932,9 @@
     <button class="bottom-nav-item" onclick="showPage('einstellungen')">
       <span class="bottom-nav-icon">⚙️</span>Einstellungen
     </button>
+    <button class="bottom-nav-item" onclick="showPage('import-export')">
+      <span class="bottom-nav-icon">🔄</span>Import/Export
+    </button>
   </div>
 </div>
 
@@ -1035,8 +1067,8 @@ let editingSchuelerId = null;
 let currentDetailId = null;
 
 // ── Navigation ──
-const ALL_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','klasse-detail'];
-const NAV_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen'];
+const ALL_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','import-export','klasse-detail'];
+const NAV_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','import-export'];
 function showPage(page) {
   ALL_PAGES.forEach(p => {
     document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
@@ -1051,6 +1083,7 @@ function showPage(page) {
   if (page === 'einstellungen') loadEinstellungen();
   if (page === 'stundenplan') loadStundenplan();
   if (page === 'unterrichtsplanung') loadUnterrichtsplanung();
+  if (page === 'import-export') kdImportZuruecksetzen();
 }
 
 // ── Toast ──
@@ -4341,6 +4374,290 @@ function renderSchueler(list) {
     </div>
   `;
   }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Import / Export — Schüler aus einer Excel-Datei importieren.
+// Spaltenreihenfolge der Import-Datei (1-indexiert, muss exakt eingehalten werden):
+//  1 Vorname* | 2 Nachname* | 3 Geschlecht (m/w) | 4 Geburtsdatum (TT.MM.JJJJ) |
+//  5 Straße | 6 PLZ | 7 Ort | 8 Klasse | 9 Schuljahr der Klasse |
+//  10-17 Telefon 1-4 (je Bezeichnung + Nummer) | 18-23 E-Mail 1-3 (je Bezeichnung + Adresse)
+// ══════════════════════════════════════════════════════════════════
+
+const KD_IMPORT_SPALTEN = [
+  'Vorname', 'Nachname', 'Geschlecht (m/w)', 'Geburtsdatum (TT.MM.JJJJ)',
+  'Straße', 'PLZ', 'Ort', 'Klasse', 'Schuljahr der Klasse',
+  'Telefon 1 – Bezeichnung', 'Telefon 1 – Nummer',
+  'Telefon 2 – Bezeichnung', 'Telefon 2 – Nummer',
+  'Telefon 3 – Bezeichnung', 'Telefon 3 – Nummer',
+  'Telefon 4 – Bezeichnung', 'Telefon 4 – Nummer',
+  'E-Mail 1 – Bezeichnung', 'E-Mail 1 – Adresse',
+  'E-Mail 2 – Bezeichnung', 'E-Mail 2 – Adresse',
+  'E-Mail 3 – Bezeichnung', 'E-Mail 3 – Adresse',
+];
+
+let kdImportZeilen = []; // geparste + validierte Zeilen der zuletzt hochgeladenen Datei
+
+function kdImportZuruecksetzen() {
+  kdImportZeilen = [];
+  const nameEl = document.getElementById('import-datei-name');
+  const vorschauEl = document.getElementById('import-vorschau');
+  const ergebnisEl = document.getElementById('import-ergebnis');
+  if (nameEl) nameEl.textContent = '';
+  if (vorschauEl) vorschauEl.innerHTML = '';
+  if (ergebnisEl) ergebnisEl.innerHTML = '';
+}
+
+function kdImportBeispielHerunterladen() {
+  const kopf = KD_IMPORT_SPALTEN;
+  const beispielZeilen = [
+    ['Max', 'Mustermann', 'm', '12.04.2011', 'Musterstraße 1', '12345', 'Musterstadt', '10bR', '2026/27',
+      'Mutter', '0151 1234567', 'Vater', '0151 7654321', '', '', '', '',
+      'Mutter', 'mutter@example.com', 'Vater', 'vater@example.com', '', ''],
+    ['Anna', 'Beispiel', 'w', '03.09.2011', 'Beispielweg 5', '12345', 'Musterstadt', '10bR', '2026/27',
+      'Mutter', '0170 9876543', '', '', '', '', '', '',
+      'Mutter', 'anna.mutter@example.com', '', '', '', ''],
+  ];
+  const hinweise = [
+    ['Hinweise zum Import'],
+    [''],
+    ['• Spalten Vorname und Nachname sind Pflicht, alle anderen Spalten können leer bleiben.'],
+    ['• Geschlecht: nur "m" oder "w" (oder leer lassen).'],
+    ['• Geburtsdatum: Format TT.MM.JJJJ, z.B. 12.04.2011.'],
+    ['• Klasse: muss exakt so heißen wie eine bereits in KlassenFux angelegte Klasse (z.B. "10bR").'],
+    ['  Wird die Klasse nicht gefunden, wird der Schüler trotzdem importiert, aber ohne Klassenzuordnung.'],
+    ['• Schuljahr der Klasse: hilft bei der eindeutigen Zuordnung, falls es mehrere Klassen mit demselben Namen'],
+    ['  in unterschiedlichen Schuljahren gibt (z.B. "2026/27").'],
+    ['• Telefon/E-Mail: bis zu 4 Telefonnummern und 3 E-Mail-Adressen je Schüler, jeweils mit optionaler Bezeichnung'],
+    ['  (z.B. "Mutter", "Vater", "Schüler selbst").'],
+    ['• Bitte die Spaltenreihenfolge des Tabellenblatts "Schüler" nicht verändern.'],
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const wsSchueler = XLSX.utils.aoa_to_sheet([kopf, ...beispielZeilen]);
+  wsSchueler['!cols'] = kopf.map(() => ({ wch: 20 }));
+  XLSX.utils.book_append_sheet(wb, wsSchueler, 'Schüler');
+  const wsHinweise = XLSX.utils.aoa_to_sheet(hinweise);
+  wsHinweise['!cols'] = [{ wch: 100 }];
+  XLSX.utils.book_append_sheet(wb, wsHinweise, 'Hinweise');
+  XLSX.writeFile(wb, 'KlassenFux_Schueler_Import_Beispiel.xlsx');
+}
+
+// Wandelt einen Zellwert (String im Format TT.MM.JJJJ ODER ein von SheetJS geparstes Date-Objekt) in ISO (JJJJ-MM-TT) um
+function kdImportDatumParsen(wert) {
+  if (!wert) return null;
+  if (wert instanceof Date && !isNaN(wert)) {
+    return wert.toISOString().slice(0, 10);
+  }
+  const str = String(wert).trim();
+  const m = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) {
+    const [, tag, monat, jahr] = m;
+    return `${jahr}-${monat.padStart(2, '0')}-${tag.padStart(2, '0')}`;
+  }
+  return null;
+}
+
+const KD_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function kdImportDateiAusgewaehlt(event) {
+  const datei = event.target.files[0];
+  if (!datei) return;
+  document.getElementById('import-datei-name').textContent = `Datei: ${datei.name}`;
+  document.getElementById('import-ergebnis').innerHTML = '';
+
+  if (!allKlassen.length) await loadKlassen();
+
+  const buffer = await datei.arrayBuffer();
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+  const sheetName = wb.SheetNames.includes('Schüler') ? 'Schüler' : wb.SheetNames[0];
+  const sheet = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+
+  // Erste Zeile ist die Kopfzeile — überspringen
+  const datenZeilen = rows.slice(1);
+
+  kdImportZeilen = datenZeilen.map((row, idx) => kdImportZeileAuswerten(row, idx + 2));
+  kdImportVorschauRendern();
+}
+
+function kdImportZeileAuswerten(row, zeilenNr) {
+  const get = (i) => (row[i] != null ? row[i] : '');
+  const meldungen = [];
+
+  const vorname = String(get(0)).trim();
+  const nachname = String(get(1)).trim();
+  if (!vorname || !nachname) {
+    return { zeilenNr, fehler: true, meldungen: ['Vorname und/oder Nachname fehlt — Zeile wird nicht importiert.'], vorname, nachname };
+  }
+
+  let geschlecht = String(get(2)).trim().toLowerCase();
+  if (geschlecht && geschlecht !== 'm' && geschlecht !== 'w') {
+    meldungen.push(`Geschlecht "${get(2)}" ungültig (nur m/w) — wird ignoriert.`);
+    geschlecht = '';
+  }
+
+  let geburtsdatum = null;
+  const geburtsdatumRoh = get(3);
+  if (geburtsdatumRoh) {
+    geburtsdatum = kdImportDatumParsen(geburtsdatumRoh);
+    if (!geburtsdatum) meldungen.push(`Geburtsdatum "${geburtsdatumRoh}" ungültig (Format TT.MM.JJJJ) — wird ignoriert.`);
+  }
+
+  const strasse = String(get(4)).trim();
+  const plz = String(get(5)).trim();
+  const ort = String(get(6)).trim();
+
+  const klasseName = String(get(7)).trim();
+  const klasseSchuljahr = String(get(8)).trim();
+  let klasseId = null;
+  if (klasseName) {
+    const treffer = allKlassen.filter(k => k.name.toLowerCase() === klasseName.toLowerCase());
+    let match = treffer[0];
+    if (treffer.length > 1 && klasseSchuljahr) {
+      match = treffer.find(k => String(k.schuljahr).trim() === klasseSchuljahr) || match;
+    }
+    if (match) klasseId = match.id;
+    else meldungen.push(`Klasse "${klasseName}" nicht gefunden — wird ohne Klasse importiert.`);
+  }
+
+  const telefone = [];
+  for (let i = 0; i < 4; i++) {
+    const bez = String(get(9 + i * 2)).trim();
+    const nummer = String(get(10 + i * 2)).trim();
+    if (nummer) telefone.push({ bezeichnung: bez || null, nummer });
+  }
+
+  const emails = [];
+  for (let i = 0; i < 3; i++) {
+    const bez = String(get(17 + i * 2)).trim();
+    const adresse = String(get(18 + i * 2)).trim();
+    if (adresse) {
+      if (!KD_EMAIL_REGEX.test(adresse)) {
+        meldungen.push(`E-Mail-Adresse "${adresse}" ungültig — wird ignoriert.`);
+      } else {
+        emails.push({ bezeichnung: bez || null, email: adresse });
+      }
+    }
+  }
+
+  return {
+    zeilenNr, fehler: false,
+    vorname, nachname, geschlecht: geschlecht || null, geburtsdatum,
+    strasse: strasse || null, plz: plz || null, ort: ort || null,
+    klasseName: klasseName || null, klasseId,
+    telefone, emails, meldungen,
+  };
+}
+
+function kdImportVorschauRendern() {
+  const el = document.getElementById('import-vorschau');
+  if (kdImportZeilen.length === 0) {
+    el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:13px;">Keine Datenzeilen in der Datei gefunden.</div>`;
+    return;
+  }
+  const importierbar = kdImportZeilen.filter(z => !z.fehler);
+  const fehlerhaft = kdImportZeilen.filter(z => z.fehler);
+  const mitHinweis = importierbar.filter(z => z.meldungen.length > 0);
+
+  let html = `<div style="font-size:12.5px;color:var(--gray-600);margin-bottom:10px;">
+    <strong>${kdImportZeilen.length}</strong> Zeile${kdImportZeilen.length === 1 ? '' : 'n'} gefunden ·
+    <strong style="color:#16a34a;">${importierbar.length}</strong> importierbar
+    ${mitHinweis.length > 0 ? ` (davon ${mitHinweis.length} mit Hinweis)` : ''}
+    ${fehlerhaft.length > 0 ? ` · <strong style="color:#dc2626;">${fehlerhaft.length}</strong> mit Fehler (werden übersprungen)` : ''}
+  </div>`;
+
+  html += `<div style="border:1px solid var(--gray-200);border-radius:10px;overflow:auto;max-height:420px;">
+    <table style="border-collapse:collapse;width:100%;font-size:12px;">
+      <thead>
+        <tr style="background:var(--gray-100);">
+          <th style="text-align:left;padding:7px 10px;position:sticky;top:0;background:var(--gray-100);">Zeile</th>
+          <th style="text-align:left;padding:7px 10px;position:sticky;top:0;background:var(--gray-100);">Name</th>
+          <th style="text-align:left;padding:7px 10px;position:sticky;top:0;background:var(--gray-100);">Klasse</th>
+          <th style="text-align:left;padding:7px 10px;position:sticky;top:0;background:var(--gray-100);">Tel./E-Mail</th>
+          <th style="text-align:left;padding:7px 10px;position:sticky;top:0;background:var(--gray-100);">Status</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  kdImportZeilen.forEach((z, idx) => {
+    const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+    const statusIcon = z.fehler ? '❌' : (z.meldungen.length > 0 ? '⚠️' : '✅');
+    const statusText = z.fehler
+      ? z.meldungen.join(' ')
+      : (z.meldungen.length > 0 ? z.meldungen.join(' ') : 'OK');
+    const statusColor = z.fehler ? '#dc2626' : (z.meldungen.length > 0 ? '#b45309' : '#16a34a');
+    html += `<tr style="background:${rowBg};">
+      <td style="padding:6px 10px;border-top:1px solid var(--gray-100);color:var(--gray-400);">${z.zeilenNr}</td>
+      <td style="padding:6px 10px;border-top:1px solid var(--gray-100);font-weight:600;">${z.nachname || '–'}${z.vorname ? ', ' + z.vorname : ''}</td>
+      <td style="padding:6px 10px;border-top:1px solid var(--gray-100);">${z.klasseName || '–'}</td>
+      <td style="padding:6px 10px;border-top:1px solid var(--gray-100);color:var(--gray-500);">${(z.telefone?.length || 0)} Tel. · ${(z.emails?.length || 0)} E-Mail</td>
+      <td style="padding:6px 10px;border-top:1px solid var(--gray-100);color:${statusColor};">${statusIcon} ${statusText}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+
+  html += `<div style="margin-top:14px;">
+    <button class="btn btn-primary" onclick="kdImportStarten()" ${importierbar.length === 0 ? 'disabled' : ''}>
+      💾 ${importierbar.length} Schüler importieren
+    </button>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
+async function kdImportStarten() {
+  const importierbar = kdImportZeilen.filter(z => !z.fehler);
+  if (importierbar.length === 0) return;
+
+  const ergebnisEl = document.getElementById('import-ergebnis');
+  ergebnisEl.innerHTML = `<div style="font-size:12.5px;color:var(--gray-500);">Importiere…</div>`;
+
+  let erfolgreich = 0;
+  const fehlgeschlagen = [];
+
+  for (const z of importierbar) {
+    const payload = {
+      vorname: z.vorname, nachname: z.nachname,
+      geschlecht: z.geschlecht, geburtsdatum: z.geburtsdatum,
+      strasse: z.strasse, plz: z.plz, ort: z.ort,
+      klasse_id: z.klasseId,
+    };
+    const { data, error } = await sb.from('schueler').insert(payload).select().single();
+    if (error || !data) {
+      fehlgeschlagen.push({ zeilenNr: z.zeilenNr, name: `${z.nachname}, ${z.vorname}`, fehler: error?.message || 'Unbekannter Fehler' });
+      continue;
+    }
+    const schuelerId = data.id;
+    if (z.telefone.length > 0) {
+      await sb.from('telefonnummern').insert(z.telefone.map((t, i) => ({ schueler_id: schuelerId, bezeichnung: t.bezeichnung, nummer: t.nummer, reihenfolge: i + 1 })));
+    }
+    if (z.emails.length > 0) {
+      await sb.from('emailadressen').insert(z.emails.map((e, i) => ({ schueler_id: schuelerId, bezeichnung: e.bezeichnung, email: e.email, reihenfolge: i + 1 })));
+    }
+    erfolgreich++;
+  }
+
+  let html = `<div style="padding:12px 14px;border-radius:10px;background:${fehlgeschlagen.length > 0 ? '#fef9c3' : '#dcfce7'};font-size:13px;">
+    <strong>${erfolgreich}</strong> Schüler erfolgreich importiert.
+    ${fehlgeschlagen.length > 0 ? `<br><strong style="color:#b45309;">${fehlgeschlagen.length}</strong> fehlgeschlagen:` : ''}
+  </div>`;
+  if (fehlgeschlagen.length > 0) {
+    html += `<ul style="margin:8px 0 0 18px;font-size:12px;color:#b45309;">
+      ${fehlgeschlagen.map(f => `<li>Zeile ${f.zeilenNr} (${f.name}): ${f.fehler}</li>`).join('')}
+    </ul>`;
+  }
+  ergebnisEl.innerHTML = html;
+
+  showToast(`${erfolgreich} Schüler importiert ✓`, 'success');
+  loadSchueler();
+  loadStats();
+
+  // Erfolgreich importierte Zeilen aus der Vorschau entfernen, fehlgeschlagene und Fehlerzeilen behalten
+  const fehlgeschlageneZeilen = new Set(fehlgeschlagen.map(f => f.zeilenNr));
+  kdImportZeilen = kdImportZeilen.filter(z => z.fehler || fehlgeschlageneZeilen.has(z.zeilenNr));
+  kdImportVorschauRendern();
 }
 
 function filterSchueler(q) {
