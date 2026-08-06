@@ -1155,7 +1155,7 @@ let kdNotenUeb2Offen = new Set();     // aufgeklappte Hauptkategorie-Details, Ke
 let kdNotenUeb2Suche = '';            // Sucheingabe für Schülerfilter in Notenübersicht 2
 let kdNotenUeb3Hj = 1;                 // angezeigtes Halbjahr in Notenübersicht Heatmap
 let kdNotenUeb3Sortierung = null;      // { key, richtung } — Sortierung der Schülerzeilen
-let kdNotenUeb3Offen = new Set();      // aufgeklappte Detailzellen, Key: "<schuelerId>::<hauptkatname>"
+let kdNotenUeb3Offen = new Set();      // aufgeklappte Kategorie-Spalten (Key: Hauptkategoriename) in der Heatmap
 let kdNotenUeb4Suche = '';              // Sucheingabe (Schülername) in Notenübersicht Vollständig
 let kdNotenUeb4Eingeklappt = new Set(); // eingeklappte Schülerkarten (Standard: alle aufgeklappt), Key: schuelerId
 
@@ -3615,18 +3615,18 @@ function kdRenderNotenUebersicht2() {
 
 // ══════════════════════════════════════════════════════════════════
 // Notenübersicht Heatmap — dritte Alternativansicht für die ganze Klasse.
-// Anders als die klassische Tabelle wächst die Breite hier NICHT mit der
-// Anzahl der Einzelnoten: es gibt genau eine Spalte pro Hauptkategorie
-// (farbcodiert wie ein Notenspiegel-Heatmap), Einzelnoten werden erst per
-// Klick auf eine Zelle aufgeklappt. Spaltenköpfe sind klickbar zum Sortieren,
-// unten steht eine Klassendurchschnitts-Fußzeile je Kategorie.
+// Standardmäßig gibt es genau eine Spalte pro Hauptkategorie (farbcodiert
+// wie ein Notenspiegel-Heatmap), damit die Tabelle nicht mit der Anzahl
+// der Einzelnoten in die Breite wächst. Per Klick auf eine Kategorie-
+// Kopfzeile (z.B. "Schr." oder "Mü") klappt diese Spalte für ALLE Schüler
+// gleichzeitig zu Einzelnoten-Spalten auf — erneuter Klick klappt sie
+// wieder ein. Unten steht eine Klassendurchschnitts-Fußzeile je Kategorie.
 // ══════════════════════════════════════════════════════════════════
 
 function kdNotenUeb3SetHj(hj) { kdNotenUeb3Hj = hj; kdRenderNoten(); }
 
-function kdNotenUeb3ToggleZelle(schuelerId, hkName) {
-  const key = schuelerId + '::' + hkName;
-  if (kdNotenUeb3Offen.has(key)) kdNotenUeb3Offen.delete(key); else kdNotenUeb3Offen.add(key);
+function kdNotenUeb3ToggleSpalte(hkName) {
+  if (kdNotenUeb3Offen.has(hkName)) kdNotenUeb3Offen.delete(hkName); else kdNotenUeb3Offen.add(hkName);
   kdRenderNoten();
 }
 
@@ -3726,15 +3726,29 @@ function kdRenderNotenUebersicht3() {
   const klassenschnittGesamt = klassenschnittGesamtWerte.length > 0 ? klassenschnittGesamtWerte.reduce((a, v) => a + v, 0) / klassenschnittGesamtWerte.length : null;
 
   const pfeil = (key) => kdNotenUeb3Sortierung?.key === key ? (kdNotenUeb3Sortierung.richtung === 'asc' ? ' ▲' : ' ▼') : '';
+  const kuerzelTitel = (titel) => !titel ? '–' : (titel.length > 9 ? titel.slice(0, 8) + '…' : titel);
+  const ROW1_HOEHE = 34; // feste Höhe der 1. Kopfzeile, damit die 2. Kopfzeile (Einzelnoten) korrekt darunter "sticky" bleibt
 
-  let kopf = `<th onclick="kdNotenUeb3Sortieren('name')" style="position:sticky;left:0;top:0;z-index:5;background:var(--gray-100);padding:8px 10px;font-size:11px;font-weight:700;color:#000000;cursor:pointer;border-top-left-radius:12px;text-align:left;white-space:nowrap;">Schüler${pfeil('name')}</th>`;
+  // Kopfzeile 1: Schüler / je Hauptkategorie (aufgeklappt: nur Gruppenlabel über den Einzelspalten) / Ø / ZN / ZN
+  let kopf1 = `<th rowspan="2" onclick="kdNotenUeb3Sortieren('name')" style="position:sticky;left:0;top:0;z-index:5;background:var(--gray-100);padding:8px 10px;font-size:11px;font-weight:700;color:#000000;cursor:pointer;border-top-left-radius:12px;text-align:left;white-space:nowrap;height:${ROW1_HOEHE}px;box-sizing:border-box;">Schüler${pfeil('name')}</th>`;
+  let kopf2 = '';
   hauptkatConfig.forEach(hk => {
-    kopf += `<th onclick="kdNotenUeb3Sortieren('${hk.name.replace(/'/g, "\\'")}')" title="${(hk.name || '').replace(/"/g, '&quot;')}"
-      style="position:sticky;top:0;z-index:3;background:${kdFarbeAufhellen(hk.farbe || '#94a3b8', 0.82)};color:#000000;padding:8px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:64px;border-bottom:3px solid ${hk.farbe || '#94a3b8'};">${hk.kuerzel || hk.name}${pfeil(hk.name)}</th>`;
+    const offen = kdNotenUeb3Offen.has(hk.name);
+    const block = blocksAktiv.find(b => b.hk.name === hk.name);
+    const entries = block ? block.entries : [];
+    const icon = offen ? '▾' : '▸';
+    kopf1 += `<th colspan="${offen ? entries.length + 1 : 1}" rowspan="${offen ? 1 : 2}" onclick="kdNotenUeb3ToggleSpalte('${hk.name.replace(/'/g, "\\'")}')" title="${(hk.name || '').replace(/"/g, '&quot;')} — klicken zum ${offen ? 'Einklappen' : 'Aufklappen'}"
+      style="position:sticky;top:0;z-index:3;background:${kdFarbeAufhellen(hk.farbe || '#94a3b8', 0.82)};color:#000000;padding:8px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:64px;border-bottom:3px solid ${hk.farbe || '#94a3b8'};height:${ROW1_HOEHE}px;box-sizing:border-box;">${icon} ${hk.kuerzel || hk.name}</th>`;
+    if (offen) {
+      entries.forEach(e => {
+        kopf2 += `<th style="position:sticky;top:${ROW1_HOEHE}px;z-index:2;background:var(--gray-50,#f9fafb);color:var(--gray-600);padding:5px 4px;font-size:10px;font-weight:600;white-space:nowrap;" title="${(e.titel || '').replace(/"/g, '&quot;')}">${kuerzelTitel(e.titel)}</th>`;
+      });
+      kopf2 += `<th style="position:sticky;top:${ROW1_HOEHE}px;z-index:2;background:var(--gray-200);color:#000000;padding:5px 4px;font-size:10px;font-weight:700;white-space:nowrap;">Ø</th>`;
+    }
   });
-  kopf += `<th onclick="kdNotenUeb3Sortieren('mittelwert')" style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Ø ${hj}. Hj${pfeil('mittelwert')}</th>`;
-  kopf += `<th style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;white-space:nowrap;">ZN errechnet</th>`;
-  kopf += `<th style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;white-space:nowrap;border-top-right-radius:12px;">ZN</th>`;
+  kopf1 += `<th rowspan="2" onclick="kdNotenUeb3Sortieren('mittelwert')" style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;height:${ROW1_HOEHE}px;box-sizing:border-box;">Ø ${hj}. Hj${pfeil('mittelwert')}</th>`;
+  kopf1 += `<th rowspan="2" style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;white-space:nowrap;height:${ROW1_HOEHE}px;box-sizing:border-box;">ZN errechnet</th>`;
+  kopf1 += `<th rowspan="2" style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;white-space:nowrap;border-top-right-radius:12px;height:${ROW1_HOEHE}px;box-sizing:border-box;">ZN</th>`;
 
   let body = '';
   zeilen.forEach((z, idx) => {
@@ -3742,11 +3756,28 @@ function kdRenderNotenUebersicht3() {
     body += `<tr style="background:${rowBg};">
       <td style="position:sticky;left:0;background-color:${rowBg};padding:7px 10px;font-size:12.5px;font-weight:600;color:var(--gray-800);white-space:nowrap;border-top:1px solid var(--gray-100);border-right:2px solid var(--gray-200);">${z.s.nachname}, ${z.s.vorname}</td>`;
     hauptkatConfig.forEach(hk => {
+      const offen = kdNotenUeb3Offen.has(hk.name);
       const wert = z.kategorieWerte[hk.name];
-      const farbe = kdNotenUeb2Farbe(wert);
-      body += `<td onclick="kdNotenUeb3ToggleZelle('${z.s.id}','${hk.name.replace(/'/g, "\\'")}')" style="text-align:center;padding:7px 4px;border-top:1px solid var(--gray-100);cursor:pointer;">
-        <span style="display:inline-block;min-width:34px;padding:2px 6px;border-radius:6px;font-size:12px;font-weight:700;background:${farbe.bg};color:${farbe.fg};">${fmt2(wert)}</span>
-      </td>`;
+      if (offen) {
+        const block = blocksAktiv.find(b => b.hk.name === hk.name);
+        const entries = block ? block.entries : [];
+        entries.forEach(e => {
+          const v = kdNotenWertFuerSchueler(e, z.s.id);
+          const farbe = kdNotenUeb2Farbe(v);
+          body += `<td style="text-align:center;padding:6px 4px;border-top:1px solid var(--gray-100);">
+            <span style="display:inline-block;min-width:30px;padding:2px 5px;border-radius:6px;font-size:11.5px;font-weight:700;background:${farbe.bg};color:${farbe.fg};">${v == null ? '–' : fmt2(v)}</span>
+          </td>`;
+        });
+        const farbeMw = kdNotenUeb2Farbe(wert);
+        body += `<td style="text-align:center;padding:6px 4px;border-top:1px solid var(--gray-100);background:var(--gray-50,#f9fafb);">
+          <span style="display:inline-block;min-width:30px;padding:2px 5px;border-radius:6px;font-size:11.5px;font-weight:700;background:${farbeMw.bg};color:${farbeMw.fg};">${fmt2(wert)}</span>
+        </td>`;
+      } else {
+        const farbe = kdNotenUeb2Farbe(wert);
+        body += `<td style="text-align:center;padding:7px 4px;border-top:1px solid var(--gray-100);">
+          <span style="display:inline-block;min-width:34px;padding:2px 6px;border-radius:6px;font-size:12px;font-weight:700;background:${farbe.bg};color:${farbe.fg};">${fmt2(wert)}</span>
+        </td>`;
+      }
     });
     body += `<td style="text-align:center;padding:7px 8px;font-size:13px;font-weight:800;color:var(--gray-800);border-top:1px solid var(--gray-100);background:var(--gray-50,#f9fafb);">${fmt2(z.hjMw)}</td>`;
     body += `<td style="text-align:center;padding:7px 8px;font-size:13px;font-weight:700;color:var(--gray-700);border-top:1px solid var(--gray-100);">${z.zeugnisCode || '–'}</td>`;
@@ -3759,43 +3790,22 @@ function kdRenderNotenUebersicht3() {
       </select>
     </td>`;
     body += `</tr>`;
-
-    hauptkatConfig.forEach(hk => {
-      const key = z.s.id + '::' + hk.name;
-      if (!kdNotenUeb3Offen.has(key)) return;
-      const block = blocksAktiv.find(b => b.hk.name === hk.name);
-      const entries = block ? block.entries : [];
-      body += `<tr style="background:${rowBg};">
-        <td style="position:sticky;left:0;background-color:${rowBg};border-top:1px dashed var(--gray-200);"></td>
-        <td colspan="${hauptkatConfig.length + 3}" style="padding:6px 12px 10px 12px;border-top:1px dashed var(--gray-200);">
-          <div style="font-size:11px;font-weight:700;color:var(--gray-500);margin-bottom:4px;">${z.s.vorname} ${z.s.nachname} · ${hk.kuerzel || hk.name}</div>
-          ${entries.length === 0 ? `<div style="font-size:11.5px;color:var(--gray-400);">Noch keine Noten erfasst.</div>` :
-            `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-              ${entries.map(e => {
-                const v = kdNotenWertFuerSchueler(e, z.s.id);
-                const vf = kdNotenUeb2Farbe(v);
-                return `<span style="display:inline-flex;align-items:center;gap:6px;background:white;border:1px solid var(--gray-200);border-radius:20px;padding:3px 10px 3px 4px;font-size:11px;">
-                  <span style="background:${vf.bg};color:${vf.fg};border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:10.5px;">${v == null ? '–' : fmt2(v)}</span>
-                  <span style="color:var(--gray-600);">${e.titel || '(ohne Titel)'}${e.unterkategorie ? ' · ' + e.unterkategorie : ''}</span>
-                </span>`;
-              }).join('')}
-            </div>`}
-        </td>
-      </tr>`;
-    });
   });
 
   let fuss = `<td style="position:sticky;left:0;background:var(--gray-100);padding:8px 10px;font-size:11.5px;font-weight:800;color:var(--gray-600);border-top:2px solid var(--gray-300);border-right:2px solid var(--gray-200);white-space:nowrap;">Klassenschnitt</td>`;
   hauptkatConfig.forEach(hk => {
-    fuss += `<td style="text-align:center;padding:7px 4px;border-top:2px solid var(--gray-300);font-size:12px;font-weight:700;color:var(--gray-600);">${fmt2(klassenschnitt[hk.name])}</td>`;
+    const offen = kdNotenUeb3Offen.has(hk.name);
+    const block = blocksAktiv.find(b => b.hk.name === hk.name);
+    const entries = block ? block.entries : [];
+    fuss += `<td colspan="${offen ? entries.length + 1 : 1}" style="text-align:center;padding:7px 4px;border-top:2px solid var(--gray-300);font-size:12px;font-weight:700;color:var(--gray-600);">${fmt2(klassenschnitt[hk.name])}</td>`;
   });
   fuss += `<td style="text-align:center;padding:7px 8px;border-top:2px solid var(--gray-300);font-size:13px;font-weight:800;color:var(--gray-800);background:var(--gray-50,#f9fafb);">${fmt2(klassenschnittGesamt)}</td>`;
   fuss += `<td colspan="2" style="border-top:2px solid var(--gray-300);"></td>`;
 
-  html += `<div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">💡 Kopfzeile klicken zum Sortieren · farbige Zelle klicken für die Einzelnoten.</div>`;
+  html += `<div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">💡 Kategorie-Kopf (z.B. „${hauptkatConfig[0].kuerzel || hauptkatConfig[0].name}“) klicken: Einzelnoten ein-/ausblenden · Schüler/Ø-Kopf klicken zum Sortieren.</div>`;
   html += `<div style="border-radius:14px;border:1px solid var(--gray-200);box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:auto;max-height:75vh;">
     <table style="border-collapse:separate;border-spacing:0;width:100%;">
-      <thead><tr>${kopf}</tr></thead>
+      <thead><tr>${kopf1}</tr><tr>${kopf2}</tr></thead>
       <tbody>${body}</tbody>
       <tfoot><tr>${fuss}</tr></tfoot>
     </table>
