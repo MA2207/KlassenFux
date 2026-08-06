@@ -3093,6 +3093,11 @@ function kdRenderNotenEingabe() {
     </div>`;
   }
 
+  html += `<div style="display:flex;gap:10px;margin-bottom:14px;">
+    <button class="btn btn-primary" onclick="kdNotenEintragSpeichern()">${bearbeiteterEintrag ? '💾 Aktualisieren' : '💾 Speichern'}</button>
+    ${bearbeiteterEintrag ? `<button class="btn btn-secondary" onclick="kdNotenEintragLoeschen('${bearbeiteterEintrag.id}')" style="color:#dc2626;">🗑 Eintrag löschen</button>` : ''}
+  </div>`;
+
   html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;">
     <div class="form-group" style="margin-bottom:0;flex:1;min-width:180px;">
       <label class="form-label">Titel / Bezeichnung</label>
@@ -3171,11 +3176,6 @@ function kdRenderNotenEingabe() {
   }
 
   html += `<div id="ne-notenspiegel" style="margin-bottom:16px;"></div>`;
-
-  html += `<div style="display:flex;gap:10px;">
-    <button class="btn btn-primary" onclick="kdNotenEintragSpeichern()">${bearbeiteterEintrag ? '💾 Aktualisieren' : '💾 Speichern'}</button>
-    ${bearbeiteterEintrag ? `<button class="btn btn-secondary" onclick="kdNotenEintragLoeschen('${bearbeiteterEintrag.id}')" style="color:#dc2626;">🗑 Eintrag löschen</button>` : ''}
-  </div>`;
 
   return html;
 }
