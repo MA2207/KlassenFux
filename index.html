@@ -1104,9 +1104,25 @@ async function loadStats() {
 }
 
 // ── KLASSEN ──
+let kdKlassenSchuelerzahlen = {}; // klasse_id → { gesamt, jungen, maedchen }
+
 async function loadKlassen() {
-  const { data } = await sb.from('klassen').select('*').order('name');
+  const [{ data }, { data: schuelerRows }] = await Promise.all([
+    sb.from('klassen').select('*').order('name'),
+    sb.from('schueler').select('klasse_id, geschlecht'),
+  ]);
   allKlassen = data || [];
+
+  kdKlassenSchuelerzahlen = {};
+  (schuelerRows || []).forEach(s => {
+    if (!s.klasse_id) return;
+    if (!kdKlassenSchuelerzahlen[s.klasse_id]) kdKlassenSchuelerzahlen[s.klasse_id] = { gesamt: 0, jungen: 0, maedchen: 0 };
+    const z = kdKlassenSchuelerzahlen[s.klasse_id];
+    z.gesamt++;
+    if (s.geschlecht === 'm') z.jungen++;
+    else if (s.geschlecht === 'w') z.maedchen++;
+  });
+
   renderKlassen(allKlassen);
 }
 
@@ -1120,11 +1136,17 @@ function renderKlassen(list) {
     </div>`;
     return;
   }
-  el.innerHTML = list.map(k => `
+  el.innerHTML = list.map(k => {
+    const z = kdKlassenSchuelerzahlen[k.id] || { gesamt: 0, jungen: 0, maedchen: 0 };
+    return `
     <div class="list-item" style="cursor:pointer;" onclick="kdOeffneKlasse('${k.id}')">
       <div class="list-item-info">
         <div class="list-item-name">${k.name}</div>
-        <div class="list-item-sub">Schuljahr ${k.schuljahr}</div>
+        <div class="list-item-sub">Schuljahr ${k.schuljahr}
+          <span style="margin-left:10px;color:var(--gray-600);">👥 ${z.gesamt}</span>
+          <span style="margin-left:8px;color:#2563eb;font-weight:600;">♂ ${z.jungen}</span>
+          <span style="margin-left:8px;color:#dc2626;font-weight:600;">♀ ${z.maedchen}</span>
+        </div>
       </div>
       <div class="list-item-actions" onclick="event.stopPropagation()">
         <button class="btn btn-secondary btn-sm" onclick="editKlasse('${k.id}')">✏️</button>
@@ -1132,7 +1154,8 @@ function renderKlassen(list) {
         <button class="btn btn-danger btn-sm" onclick="deleteKlasse('${k.id}', '${k.name}')">🗑</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function filterKlassen(q) {
