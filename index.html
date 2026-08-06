@@ -3081,7 +3081,7 @@ function kdRenderNotenEingabe() {
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
       ${hauptkategorien.map(h => `<button onclick="kdNotenSetHauptkat('${h.name.replace(/'/g, "\\'")}')"
         style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
-        ${h.name === kdNotenHauptkat ? `background:${kdFarbeAufhellen(h.farbe || '#1d4ed8', 0.78)};color:var(--gray-800);font-weight:700;border:2px solid ${h.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${h.name}</button>`).join('')}
+        ${h.name === kdNotenHauptkat ? `background:${kdFarbeAufhellen(h.farbe || '#1d4ed8', 0.78)};color:#000000;font-weight:700;border:2px solid ${h.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${h.name}</button>`).join('')}
     </div>
   </div>`;
 
@@ -3093,7 +3093,7 @@ function kdRenderNotenEingabe() {
           ${!kdNotenUnterkat ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">Keine</button>
         ${unterkategorien.map(u => `<button onclick="kdNotenSetUnterkat('${u.name.replace(/'/g, "\\'")}')"
           style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
-          ${u.name === kdNotenUnterkat ? `background:${kdFarbeAufhellen(u.farbe || '#1d4ed8', 0.78)};color:var(--gray-800);font-weight:700;border:2px solid ${u.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${u.name}</button>`).join('')}
+          ${u.name === kdNotenUnterkat ? `background:${kdFarbeAufhellen(u.farbe || '#1d4ed8', 0.78)};color:#000000;font-weight:700;border:2px solid ${u.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${u.name}</button>`).join('')}
       </div>
     </div>`;
   }
@@ -3528,7 +3528,7 @@ function kdRenderNotenUebersicht() {
       const eingeklappt = istEingeklappt(hj, b.hk.name);
       const icon = eingeklappt ? '▸' : '▾';
       kopf2 += `<th colspan="${blockSpalten(b, eingeklappt)}" rowspan="${eingeklappt ? 3 : 1}" onclick="kdNotenUebToggleBlock(${hj},'${b.hk.name.replace(/'/g, "\\'")}')" title="Ein-/Ausklappen"
-        style="${stickyTop(1, `background:${kdFarbeAufhellen(b.hk.farbe || '#fde68a', 0.82)};padding:7px 6px;font-size:12px;font-weight:700;color:var(--gray-800);cursor:pointer;border-radius:6px 6px 0 0;white-space:nowrap;border-bottom:3px solid ${b.hk.farbe || '#fde68a'};`)}" title="${(b.hk.name || '').replace(/"/g, '&quot;')}">${icon} ${b.hk.kuerzel || b.hk.name}</th>`;
+        style="${stickyTop(1, `background:${kdFarbeAufhellen(b.hk.farbe || '#fde68a', 0.82)};padding:7px 6px;font-size:12px;font-weight:700;color:#000000;cursor:pointer;border-radius:6px 6px 0 0;white-space:nowrap;border-bottom:3px solid ${b.hk.farbe || '#fde68a'};`)}" title="${(b.hk.name || '').replace(/"/g, '&quot;')}">${icon} ${b.hk.kuerzel || b.hk.name}</th>`;
       if (eingeklappt) return;
       if (b.hatUnterkat) {
         b.subgroups.forEach(sg => {
@@ -3916,10 +3916,10 @@ function kdRenderNotenUebersicht3() {
 
   const pfeil = (key) => kdNotenUeb3Sortierung?.key === key ? (kdNotenUeb3Sortierung.richtung === 'asc' ? ' ▲' : ' ▼') : '';
 
-  let kopf = `<th onclick="kdNotenUeb3Sortieren('name')" style="position:sticky;left:0;top:0;z-index:5;background:var(--gray-100);padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray-600);cursor:pointer;border-top-left-radius:12px;text-align:left;white-space:nowrap;">Schüler${pfeil('name')}</th>`;
+  let kopf = `<th onclick="kdNotenUeb3Sortieren('name')" style="position:sticky;left:0;top:0;z-index:5;background:var(--gray-100);padding:8px 10px;font-size:11px;font-weight:700;color:#000000;cursor:pointer;border-top-left-radius:12px;text-align:left;white-space:nowrap;">Schüler${pfeil('name')}</th>`;
   hauptkatConfig.forEach(hk => {
     kopf += `<th onclick="kdNotenUeb3Sortieren('${hk.name.replace(/'/g, "\\'")}')" title="${(hk.name || '').replace(/"/g, '&quot;')}"
-      style="position:sticky;top:0;z-index:3;background:${kdFarbeAufhellen(hk.farbe || '#94a3b8', 0.82)};color:var(--gray-800);padding:8px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:64px;border-bottom:3px solid ${hk.farbe || '#94a3b8'};">${hk.kuerzel || hk.name}${pfeil(hk.name)}</th>`;
+      style="position:sticky;top:0;z-index:3;background:${kdFarbeAufhellen(hk.farbe || '#94a3b8', 0.82)};color:#000000;padding:8px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:64px;border-bottom:3px solid ${hk.farbe || '#94a3b8'};">${hk.kuerzel || hk.name}${pfeil(hk.name)}</th>`;
   });
   kopf += `<th onclick="kdNotenUeb3Sortieren('mittelwert')" style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Ø ${hj}. Hj${pfeil('mittelwert')}</th>`;
   kopf += `<th style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;white-space:nowrap;">ZN errechnet</th>`;
