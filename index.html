@@ -1128,6 +1128,7 @@ function renderKlassen(list) {
       </div>
       <div class="list-item-actions" onclick="event.stopPropagation()">
         <button class="btn btn-secondary btn-sm" onclick="editKlasse('${k.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" title="Alle Schüler dieser Klasse löschen" onclick="kdLoescheAlleSchuelerDerKlasse('${k.id}', '${k.name.replace(/'/g, "\\'")}')">🧑‍🎓🗑</button>
         <button class="btn btn-danger btn-sm" onclick="deleteKlasse('${k.id}', '${k.name}')">🗑</button>
       </div>
     </div>
@@ -4287,6 +4288,36 @@ async function deleteKlasse(id, name) {
   showToast('Klasse gelöscht.', 'success');
   loadKlassen();
   loadStats();
+}
+
+async function kdLoescheAlleSchuelerDerKlasse(klasseId, klasseName) {
+  if (!confirm(`Sind Sie sicher, dass Sie wirklich alle Schüler der Klasse "${klasseName}" löschen möchten?\n\nDabei werden auch alle zugehörigen Daten (Kontakte, Noten, Anwesenheit, Hausaufgaben, Beobachtungen, Checkliste) unwiderruflich entfernt.`)) return;
+
+  const { data: schuelerRows, error: ladeError } = await sb.from('schueler').select('id').eq('klasse_id', klasseId);
+  if (ladeError) return showToast('Fehler: ' + ladeError.message, 'error');
+  const ids = (schuelerRows || []).map(s => s.id);
+  if (!ids.length) return showToast('Diese Klasse hat keine Schüler.', 'error');
+
+  try {
+    await sb.from('telefonnummern').delete().in('schueler_id', ids);
+    await sb.from('emailadressen').delete().in('schueler_id', ids);
+    await sb.from('zeugnisnoten').delete().in('schueler_id', ids);
+    await sb.from('noten').delete().in('schueler_id', ids);
+    await sb.from('anwesenheit').delete().in('schueler_id', ids);
+    await sb.from('hausaufgaben').delete().in('schueler_id', ids);
+    await sb.from('unterrichtsbeobachtung').delete().in('schueler_id', ids);
+    await sb.from('checkliste_eintraege').delete().in('schueler_id', ids);
+    const { error } = await sb.from('schueler').delete().in('id', ids);
+    if (error) throw error;
+  } catch (error) {
+    return showToast('Fehler: ' + error.message, 'error');
+  }
+
+  showToast(`${ids.length} Schüler gelöscht.`, 'success');
+  loadKlassen();
+  loadStats();
+  if (typeof loadSchueler === 'function') loadSchueler();
+  if (kdAktiveKlasseId === klasseId) { kdSchueler = []; }
 }
 
 // ── SCHÜLER ──
