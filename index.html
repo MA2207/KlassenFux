@@ -1156,7 +1156,7 @@ let kdNotenUeb2Suche = '';            // Sucheingabe für Schülerfilter in Note
 let kdNotenUeb3Hj = 1;                 // angezeigtes Halbjahr in Notenübersicht Klasse
 let kdNotenUeb3Sortierung = null;      // { key, richtung } — Sortierung der Schülerzeilen
 let kdNotenUeb3Offen = new Set();      // aufgeklappte Kategorie-Spalten (Key: Hauptkategoriename) in der Heatmap
-let kdNotenUeb4Suche = '';              // Sucheingabe (Schülername) in Notenübersicht Vollständig
+let kdNotenUeb4Suche = '';              // Sucheingabe (Schülername) in Notenübersicht Liste
 let kdNotenUeb4Eingeklappt = new Set(); // eingeklappte Schülerkarten (Standard: alle aufgeklappt), Key: schuelerId
 
 function kdScrollZuHeute() {
@@ -3815,7 +3815,7 @@ function kdRenderNotenUebersicht3() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Notenübersicht Vollständig — vierte Ansicht: für JEDEN Schüler der
+// Notenübersicht Liste — vierte Ansicht: für JEDEN Schüler der
 // Klasse eine eigene Karte mit ALLEN seinen Noten in einer klaren
 // Tabelle (kein Klicken pro Kategorie nötig). Ideal für den Überblick
 // "was hat dieser Schüler in diesem Halbjahr alles bekommen?" sowie
@@ -3981,7 +3981,7 @@ function kdRenderNoten() {
       <button onclick="kdNotenSetAnsicht('eingabe')" style="${tabBtnStyle('eingabe')}">✏️ Noteneingabe</button>
       <button onclick="kdNotenSetAnsicht('uebersicht2')" style="${tabBtnStyle('uebersicht2')}">🧑‍🎓 Notenübersicht Schüler</button>
       <button onclick="kdNotenSetAnsicht('uebersicht3')" style="${tabBtnStyle('uebersicht3')}">🏫 Notenübersicht Klasse</button>
-      <button onclick="kdNotenSetAnsicht('uebersicht4')" style="${tabBtnStyle('uebersicht4')}">📖 Notenübersicht Vollständig</button>
+      <button onclick="kdNotenSetAnsicht('uebersicht4')" style="${tabBtnStyle('uebersicht4')}">📖 Notenübersicht Liste</button>
     </div>`;
 
   html += kdNotenAnsicht === 'eingabe' ? kdRenderNotenEingabe()
