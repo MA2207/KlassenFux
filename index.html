@@ -1285,7 +1285,7 @@ function kdZeigeUnterseite(seite) {
 
 async function kdLadeCheckliste() {
   const [{ data: schueler }, { data: spalten }] = await Promise.all([
-    sb.from('schueler').select('*').eq('klasse_id', kdAktiveKlasseId).order('nachname'),
+    sb.from('schueler').select('*').eq('klasse_id', kdAktiveKlasseId).order('nachname').order('vorname'),
     sb.from('checkliste_spalten').select('*').eq('klasse_id', kdAktiveKlasseId).order('reihenfolge')
   ]);
   kdSchueler = schueler || [];
@@ -3599,7 +3599,7 @@ function kdRenderNotenUebersicht2() {
   if (!schueler) {
     detailHtml += `<div style="text-align:center;padding:48px 24px;color:var(--gray-400);font-size:13px;">Schüler auswählen…</div>`;
   } else {
-    detailHtml += `<div style="font-size:17px;font-weight:800;color:var(--gray-800);margin-bottom:14px;">${schueler.vorname} ${schueler.nachname}</div>`;
+    detailHtml += `<div style="font-size:17px;font-weight:800;color:var(--gray-800);margin-bottom:14px;">${schueler.nachname}, ${schueler.vorname}</div>`;
     detailHtml += `<div style="display:flex;gap:16px;flex-wrap:wrap;">`;
 
     [1, 2].forEach(hj => {
@@ -4108,7 +4108,7 @@ function kdRenderCheckliste() {
           const rowBg = idx % 2 === 0 ? 'var(--white)' : 'var(--gray-50)';
           return `<tr>
             <td style="padding:6px 8px;font-size:14px;border-right:1px solid var(--gray-200);border-bottom:1px solid var(--gray-100);position:sticky;left:0;background:var(--white);z-index:1;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              <span style="font-weight:600;color:var(--gray-800);">${s.nachname}</span>
+              <span style="font-weight:600;color:var(--gray-800);">${s.nachname},</span>
               <span style="color:var(--gray-500);font-size:13px;"> ${s.vorname}</span>
             </td>
             ${kdSpalten.map(sp => {
@@ -4293,7 +4293,7 @@ async function deleteKlasse(id, name) {
 let kdFaecherProKlasse = {}; // klasse_id → sortierte Liste der dort unterrichteten Fächer (aus dem Stundenplan)
 
 async function loadSchueler() {
-  const { data } = await sb.from('schueler').select('*, klassen(name, schuljahr)').order('nachname');
+  const { data } = await sb.from('schueler').select('*, klassen(name, schuljahr)').order('nachname').order('vorname');
   allSchueler = data || [];
   // Klassen-Filter befüllen
   const filterEl = document.getElementById('klassen-filter');
@@ -4829,7 +4829,7 @@ async function showDetail(id) {
     sb.from('emailadressen').select('*').eq('schueler_id', id).order('reihenfolge'),
   ]);
 
-  document.getElementById('detail-name').textContent = `${s.vorname} ${s.nachname}`;
+  document.getElementById('detail-name').textContent = `${s.nachname}, ${s.vorname}`;
 
   const gebDat = s.geburtsdatum ? new Date(s.geburtsdatum).toLocaleDateString('de-DE') : '–';
   const geschlecht = s.geschlecht === 'm' ? 'männlich' : s.geschlecht === 'w' ? 'weiblich' : '–';
@@ -4855,7 +4855,7 @@ async function showDetail(id) {
   `;
 
   document.getElementById('btn-edit-schueler').onclick = () => openSchuelerForm(id);
-  document.getElementById('btn-delete-schueler').onclick = () => deleteSchueler(id, s.vorname + ' ' + s.nachname);
+  document.getElementById('btn-delete-schueler').onclick = () => deleteSchueler(id, s.nachname + ', ' + s.vorname);
   openModal('modal-detail');
 }
 
