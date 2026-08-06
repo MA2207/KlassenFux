@@ -455,7 +455,40 @@
       <input class="form-input" id="login-password" type="password" autocomplete="current-password" required>
     </div>
     <button class="btn btn-primary" type="submit" id="login-submit">Anmelden</button>
+    <div style="text-align:center;margin-top:12px;">
+      <a href="#" style="font-size:13px;color:var(--gray-600);" onclick="kdShowPasswordReset(event)">Passwort vergessen?</a>
+    </div>
     <div class="login-error" id="login-error"></div>
+  </form>
+
+  <form class="login-card hidden" id="reset-request-form" onsubmit="return kdRequestPasswordReset(event)">
+    <h1>🔑 Passwort zurücksetzen</h1>
+    <p>Gib deine E-Mail-Adresse ein. Du bekommst einen Link zugeschickt, mit dem du ein neues Passwort vergeben kannst.</p>
+    <div class="form-group">
+      <label class="form-label">E-Mail</label>
+      <input class="form-input" id="reset-email" type="email" autocomplete="username" required>
+    </div>
+    <button class="btn btn-primary" type="submit" id="reset-request-submit">Link zusenden</button>
+    <div style="text-align:center;margin-top:12px;">
+      <a href="#" style="font-size:13px;color:var(--gray-600);" onclick="kdShowLogin(event)">Zurück zur Anmeldung</a>
+    </div>
+    <div class="login-error" id="reset-request-error"></div>
+    <div style="color:var(--green-dark);font-size:13px;margin-top:10px;min-height:16px;" id="reset-request-success"></div>
+  </form>
+
+  <form class="login-card hidden" id="new-password-form" onsubmit="return kdSetNewPassword(event)">
+    <h1>🔑 Neues Passwort</h1>
+    <p>Bitte vergib jetzt ein neues Passwort für dein Konto.</p>
+    <div class="form-group">
+      <label class="form-label">Neues Passwort</label>
+      <input class="form-input" id="new-password-1" type="password" autocomplete="new-password" required minlength="6">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Neues Passwort (wiederholen)</label>
+      <input class="form-input" id="new-password-2" type="password" autocomplete="new-password" required minlength="6">
+    </div>
+    <button class="btn btn-primary" type="submit" id="new-password-submit">Passwort speichern</button>
+    <div class="login-error" id="new-password-error"></div>
   </form>
 </div>
 
@@ -1129,13 +1162,102 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── Auth / Login ──
+// Erkennt beim Laden synchron (vor jedem async-Aufruf), ob dies ein Klick auf einen
+// Passwort-zurücksetzen-Link aus einer E-Mail war (Supabase hängt "type=recovery" an den URL-Hash an).
+const kdIsPasswordRecovery = /type=recovery/.test(window.location.hash);
+
 async function kdCheckSession() {
+  if (kdIsPasswordRecovery) {
+    document.body.classList.add('kd-locked');
+    kdShowNewPasswordForm();
+    return;
+  }
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
     kdUnlockApp(session);
   } else {
     document.body.classList.add('kd-locked');
   }
+}
+
+function kdShowLogin(event) {
+  if (event) event.preventDefault();
+  document.getElementById('login-form').classList.remove('hidden');
+  document.getElementById('reset-request-form').classList.add('hidden');
+  document.getElementById('new-password-form').classList.add('hidden');
+}
+
+function kdShowPasswordReset(event) {
+  if (event) event.preventDefault();
+  document.getElementById('login-form').classList.add('hidden');
+  document.getElementById('reset-request-form').classList.remove('hidden');
+  document.getElementById('new-password-form').classList.add('hidden');
+  document.getElementById('reset-request-error').textContent = '';
+  document.getElementById('reset-request-success').textContent = '';
+  const vorausgefuelltesEmail = document.getElementById('login-email').value;
+  if (vorausgefuelltesEmail) document.getElementById('reset-email').value = vorausgefuelltesEmail;
+}
+
+function kdShowNewPasswordForm() {
+  document.getElementById('login-form').classList.add('hidden');
+  document.getElementById('reset-request-form').classList.add('hidden');
+  document.getElementById('new-password-form').classList.remove('hidden');
+}
+
+async function kdRequestPasswordReset(event) {
+  event.preventDefault();
+  const btn = document.getElementById('reset-request-submit');
+  const errEl = document.getElementById('reset-request-error');
+  const okEl = document.getElementById('reset-request-success');
+  errEl.textContent = '';
+  okEl.textContent = '';
+  const email = document.getElementById('reset-email').value.trim();
+  btn.disabled = true;
+  btn.textContent = 'Wird gesendet…';
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
+  btn.disabled = false;
+  btn.textContent = 'Link zusenden';
+  if (error) {
+    errEl.textContent = 'Fehler: ' + error.message;
+    return false;
+  }
+  okEl.textContent = 'E-Mail verschickt. Bitte Posteingang (auch Spam-Ordner) prüfen und den Link darin öffnen.';
+  return false;
+}
+
+async function kdSetNewPassword(event) {
+  event.preventDefault();
+  const btn = document.getElementById('new-password-submit');
+  const errEl = document.getElementById('new-password-error');
+  errEl.textContent = '';
+  const pw1 = document.getElementById('new-password-1').value;
+  const pw2 = document.getElementById('new-password-2').value;
+  if (pw1 !== pw2) {
+    errEl.textContent = 'Die beiden Passwörter stimmen nicht überein.';
+    return false;
+  }
+  if (pw1.length < 6) {
+    errEl.textContent = 'Das Passwort muss mindestens 6 Zeichen lang sein.';
+    return false;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Speichern…';
+  const { error } = await sb.auth.updateUser({ password: pw1 });
+  btn.disabled = false;
+  btn.textContent = 'Passwort speichern';
+  if (error) {
+    errEl.textContent = 'Fehler: ' + error.message;
+    return false;
+  }
+  history.replaceState(null, '', window.location.pathname);
+  await sb.auth.signOut();
+  kdShowLogin();
+  const loginErrEl = document.getElementById('login-error');
+  loginErrEl.style.color = 'var(--green-dark)';
+  loginErrEl.textContent = 'Passwort erfolgreich geändert. Bitte jetzt damit anmelden.';
+  return false;
 }
 
 function kdUnlockApp(session) {
@@ -1152,6 +1274,7 @@ async function kdLogin(event) {
   const submitBtn = document.getElementById('login-submit');
   const errEl = document.getElementById('login-error');
   errEl.textContent = '';
+  errEl.style.color = '';
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   submitBtn.disabled = true;
