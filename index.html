@@ -1458,7 +1458,7 @@ function kdRenderUnterricht() {
   const wdKurz = ['','Mo','Di','Mi','Do','Fr'];
 
   // Alle Fächer dieser Klasse ermitteln
-  const alleFaecher = [...new Set(kdUnterricht.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const alleFaecher = kdSortiereFaecherNachEinstellung([...new Set(kdUnterricht.map(r => r.fach || r._spFach).filter(Boolean))], kdNotenFaecher());
 
   // Gefilterter Datensatz
   const gefiltertList = kdUnterrichtFachFilter
@@ -1858,7 +1858,7 @@ function kdRenderAnwErfassen(vergangenStunden) {
   }
 
   // Alle Fächer dieser Klasse für Fach-Filter ermitteln
-  const alleFaecher = [...new Set(vergangenStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const alleFaecher = kdSortiereFaecherNachEinstellung([...new Set(vergangenStunden.map(r => r.fach || r._spFach).filter(Boolean))], kdNotenFaecher());
 
   // Fach-Filter anwenden (ältestes Datum zuerst – aufsteigend)
   const gefiltertStunden = kdAnwFachFilter
@@ -1983,7 +1983,7 @@ function kdRenderAnwUebersicht(vergangenStunden) {
   }
 
   // ── Fach-Filter ──────────────────────────────────────────────────
-  const alleFaecher = [...new Set(vergangenStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const alleFaecher = kdSortiereFaecherNachEinstellung([...new Set(vergangenStunden.map(r => r.fach || r._spFach).filter(Boolean))], kdNotenFaecher());
   const hjChipStyle = (hj) => hj === kdAnwUebHjFilter
     ? (hj === 1 ? 'background:#1e40af;color:white;border:2px solid #1e40af;' : hj === 2 ? 'background:#92400e;color:white;border:2px solid #92400e;' : 'background:#374151;color:white;border:2px solid #374151;')
     : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
@@ -2234,7 +2234,7 @@ function kdRenderHaErfassen(alleStunden) {
     </div>`;
   }
 
-  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const alleFaecher = kdSortiereFaecherNachEinstellung([...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))], kdNotenFaecher());
   const gefiltertStunden = kdHaFachFilter
     ? alleStunden.filter(r => (r.fach || r._spFach) === kdHaFachFilter)
     : alleStunden;
@@ -2342,7 +2342,7 @@ function kdRenderHaUebersicht(alleStunden) {
     return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
 
   // Fach-Filter
-  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const alleFaecher = kdSortiereFaecherNachEinstellung([...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))], kdNotenFaecher());
   const hjChipStyleHa = (hj) => hj === kdHaUebHjFilter
     ? (hj === 1 ? 'background:#1e40af;color:white;border:2px solid #1e40af;' : hj === 2 ? 'background:#92400e;color:white;border:2px solid #92400e;' : 'background:#374151;color:white;border:2px solid #374151;')
     : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
@@ -2568,7 +2568,7 @@ function kdRenderUbErfassen(alleStunden) {
     </div>`;
   }
 
-  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const alleFaecher = kdSortiereFaecherNachEinstellung([...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))], kdNotenFaecher());
   const gefiltert = kdUbFachFilter
     ? alleStunden.filter(r => (r.fach || r._spFach) === kdUbFachFilter)
     : alleStunden;
@@ -2680,7 +2680,7 @@ function kdRenderUbUebersicht(alleStunden) {
   if (kdSchueler.length === 0)
     return `<div style="text-align:center;padding:40px;color:var(--gray-400);">Keine Schüler in dieser Klasse.</div>`;
 
-  const alleFaecher = [...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))].sort();
+  const alleFaecher = kdSortiereFaecherNachEinstellung([...new Set(alleStunden.map(r => r.fach || r._spFach).filter(Boolean))], kdNotenFaecher());
   const hjChipStyleUb = (hj) => hj === kdUbUebHjFilter
     ? (hj === 1 ? 'background:#1e40af;color:white;border:2px solid #1e40af;' : hj === 2 ? 'background:#92400e;color:white;border:2px solid #92400e;' : 'background:#374151;color:white;border:2px solid #374151;')
     : 'background:var(--white);color:var(--gray-700);border:2px solid var(--gray-200);';
@@ -2833,9 +2833,20 @@ async function kdLadeNoten() {
 
 function kdNotenFaecher() { return kdNotenEinst.faecher || []; }
 
-// Fächer, die dieser Klasse laut Stundenplan tatsächlich unterrichtet werden
+// Fächer, die dieser Klasse laut Stundenplan tatsächlich unterrichtet werden —
+// in der Reihenfolge, wie sie unter Einstellungen → Meine Fächer angelegt wurden.
+// Fächer, die dort (noch) nicht gelistet sind, werden alphabetisch angehängt.
 function kdNotenKlassenFaecher() {
-  return [...new Set(kdUnterricht.map(r => r.fach || r._spFach).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+  const unterrichtet = new Set(kdUnterricht.map(r => r.fach || r._spFach).filter(Boolean));
+  return kdSortiereFaecherNachEinstellung([...unterrichtet], kdNotenFaecher());
+}
+
+// Sortiert eine Fächerliste gemäß einer vorgegebenen Reihenfolge (z.B. aus Einstellungen → Meine Fächer).
+// Fächer außerhalb dieser Reihenfolge werden alphabetisch ans Ende angehängt.
+function kdSortiereFaecherNachEinstellung(faecher, reihenfolge) {
+  const geordnet = (reihenfolge || []).filter(f => faecher.includes(f));
+  const uebrige = faecher.filter(f => !(reihenfolge || []).includes(f)).sort((a, b) => a.localeCompare(b, 'de'));
+  return [...geordnet, ...uebrige];
 }
 
 function kdNotenHauptkategorien(fach) {
@@ -4268,14 +4279,18 @@ async function loadSchueler() {
   const klasseIds = [...new Set(allSchueler.map(s => s.klasse_id).filter(Boolean))];
   kdFaecherProKlasse = {};
   if (klasseIds.length > 0) {
-    const { data: spRows } = await sb.from('stundenplan').select('klasse_id,fach').in('klasse_id', klasseIds);
+    const [{ data: spRows }, { data: einstRow }] = await Promise.all([
+      sb.from('stundenplan').select('klasse_id,fach').in('klasse_id', klasseIds),
+      sb.from('einstellungen').select('daten').eq('id', 1).single(),
+    ]);
+    const faecherReihenfolge = einstRow?.daten?.faecher || [];
     (spRows || []).forEach(r => {
       if (!r.fach) return;
       if (!kdFaecherProKlasse[r.klasse_id]) kdFaecherProKlasse[r.klasse_id] = new Set();
       kdFaecherProKlasse[r.klasse_id].add(r.fach);
     });
     Object.keys(kdFaecherProKlasse).forEach(k => {
-      kdFaecherProKlasse[k] = [...kdFaecherProKlasse[k]].sort((a, b) => a.localeCompare(b, 'de'));
+      kdFaecherProKlasse[k] = kdSortiereFaecherNachEinstellung([...kdFaecherProKlasse[k]], faecherReihenfolge);
     });
   }
 
