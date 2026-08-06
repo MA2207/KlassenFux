@@ -1232,29 +1232,6 @@ async function kdSpringeZuSchuelerNotenFach(schuelerId, klasseId, fach) {
   await kdZeigeUnterseite('noten');
 }
 
-// Lädt (beim Klick auf "Noten") die Fächer, in denen dieser Schüler tatsächlich Noten hat,
-// und ersetzt den Button durch anklickbare Fach-Chips ("Noten Mathe", "Noten Physik", …).
-async function kdZeigeNotenFaecher(schuelerId, klasseId, wrapEl) {
-  wrapEl.innerHTML = `<span style="font-size:11px;color:var(--gray-400);">Lädt…</span>`;
-  const { data: eintraege } = await sb.from('noteneintraege').select('id,fach').eq('klasse_id', klasseId);
-  const alleIds = (eintraege || []).map(e => e.id);
-  let faecher = [];
-  if (alleIds.length > 0) {
-    const { data: noten } = await sb.from('noten').select('noteneintrag_id,wert').eq('schueler_id', schuelerId).in('noteneintrag_id', alleIds);
-    const fachProEintrag = {};
-    (eintraege || []).forEach(e => { fachProEintrag[e.id] = e.fach; });
-    const fachSet = new Set();
-    (noten || []).forEach(n => { if (n.wert && fachProEintrag[n.noteneintrag_id]) fachSet.add(fachProEintrag[n.noteneintrag_id]); });
-    faecher = [...fachSet].sort((a, b) => a.localeCompare(b, 'de'));
-  }
-  if (faecher.length === 0) {
-    wrapEl.innerHTML = `<span style="font-size:11px;color:var(--gray-400);">Keine Noten</span>`;
-    return;
-  }
-  wrapEl.innerHTML = faecher.map(f => `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNotenFach('${schuelerId}','${klasseId}','${f.replace(/'/g, "\\'")}')"
-    class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 9px;white-space:nowrap;">📊 ${f}</button>`).join('');
-}
-
 function kdZeigeUnterseite(seite) {
   kdAktiveUnterseite = seite;
   document.querySelectorAll('[data-kd-tab]').forEach(btn => {
@@ -4269,6 +4246,8 @@ async function deleteKlasse(id, name) {
 }
 
 // ── SCHÜLER ──
+let kdFaecherProKlasse = {}; // klasse_id → sortierte Liste der dort unterrichteten Fächer (aus dem Stundenplan)
+
 async function loadSchueler() {
   const { data } = await sb.from('schueler').select('*, klassen(name, schuljahr)').order('nachname');
   allSchueler = data || [];
@@ -4283,6 +4262,23 @@ async function loadSchueler() {
     filterEl.innerHTML = '<option value="">Alle Klassen</option>' +
       klassen.map(([id, name]) => `<option value="${id}" ${id === currentVal ? 'selected' : ''}>${name}</option>`).join('');
   }
+
+  // Für alle betroffenen Klassen einmalig die unterrichteten Fächer aus dem Stundenplan laden,
+  // damit für jeden Schüler direkt alle Fach-Buttons nebeneinander angezeigt werden können.
+  const klasseIds = [...new Set(allSchueler.map(s => s.klasse_id).filter(Boolean))];
+  kdFaecherProKlasse = {};
+  if (klasseIds.length > 0) {
+    const { data: spRows } = await sb.from('stundenplan').select('klasse_id,fach').in('klasse_id', klasseIds);
+    (spRows || []).forEach(r => {
+      if (!r.fach) return;
+      if (!kdFaecherProKlasse[r.klasse_id]) kdFaecherProKlasse[r.klasse_id] = new Set();
+      kdFaecherProKlasse[r.klasse_id].add(r.fach);
+    });
+    Object.keys(kdFaecherProKlasse).forEach(k => {
+      kdFaecherProKlasse[k] = [...kdFaecherProKlasse[k]].sort((a, b) => a.localeCompare(b, 'de'));
+    });
+  }
+
   applySchuelerFilter();
 }
 
@@ -4309,7 +4305,13 @@ function renderSchueler(list) {
     </div>`;
     return;
   }
-  el.innerHTML = list.map(s => `
+  el.innerHTML = list.map(s => {
+    const faecher = s.klasse_id ? (kdFaecherProKlasse[s.klasse_id] || []) : [];
+    const notenBtns = faecher.length > 0
+      ? faecher.map(f => `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNotenFach('${s.id}','${s.klasse_id}','${f.replace(/'/g, "\\'")}')"
+          class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 9px;white-space:nowrap;">📊 ${f}</button>`).join('')
+      : (s.klasse_id ? `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNoten('${s.id}','${s.klasse_id}')" class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 9px;">📊 Noten</button>` : '');
+    return `
     <div class="list-item" onclick="showDetail('${s.id}')">
       <div class="list-item-info" style="flex:1;min-width:0;">
         <div class="list-item-name">${s.nachname}, ${s.vorname}
@@ -4318,11 +4320,12 @@ function renderSchueler(list) {
         <div class="list-item-sub">${s.klassen ? s.klassen.name + ' · ' + s.klassen.schuljahr : 'Keine Klasse'}</div>
       </div>
       <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;">
-        <div style="width:200px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;">${s.klasse_id ? `<button onclick="event.stopPropagation(); kdZeigeNotenFaecher('${s.id}', '${s.klasse_id}', this.parentElement)" class="btn btn-secondary btn-sm">📊 Noten</button>` : ''}</div>
+        <div style="max-width:320px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;">${notenBtns}</div>
         <span style="color:var(--gray-400);">›</span>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function filterSchueler(q) {
