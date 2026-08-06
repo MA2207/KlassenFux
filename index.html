@@ -1214,6 +1214,7 @@ async function kdOeffneKlasse(klasseId) {
 // Öffnet die Klasse eines Schülers und springt direkt zur Notenübersicht Schüler, vorausgewählt auf ihn
 // (verwendet z.B. vom "Noten"-Button in der globalen Schülerliste)
 async function kdSpringeZuSchuelerNoten(schuelerId, klasseId) {
+  if (!allKlassen.length) await loadKlassen(); // sonst ist die Klasse hier oft noch nicht geladen
   await kdOeffneKlasse(klasseId);
   kdNotenAnsicht = 'uebersicht2';
   kdNotenUeb2SchuelerId = schuelerId;
@@ -4276,14 +4277,16 @@ function renderSchueler(list) {
   }
   el.innerHTML = list.map(s => `
     <div class="list-item" onclick="showDetail('${s.id}')">
-      <div class="list-item-info">
+      <div class="list-item-info" style="flex:1;min-width:0;">
         <div class="list-item-name">${s.nachname}, ${s.vorname}
           <span class="badge badge-${s.geschlecht}" style="margin-left:6px">${s.geschlecht === 'm' ? '♂' : s.geschlecht === 'w' ? '♀' : ''}</span>
         </div>
         <div class="list-item-sub">${s.klassen ? s.klassen.name + ' · ' + s.klassen.schuljahr : 'Keine Klasse'}</div>
       </div>
-      ${s.klasse_id ? `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNoten('${s.id}', '${s.klasse_id}')" class="btn btn-secondary btn-sm" style="margin-right:8px;">📊 Noten</button>` : ''}
-      <span style="color:var(--gray-400);">›</span>
+      <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;">
+        <div style="width:90px;">${s.klasse_id ? `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNoten('${s.id}', '${s.klasse_id}')" class="btn btn-secondary btn-sm" style="width:100%;">📊 Noten</button>` : ''}</div>
+        <span style="color:var(--gray-400);">›</span>
+      </div>
     </div>
   `).join('');
 }
