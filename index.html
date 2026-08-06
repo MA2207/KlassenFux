@@ -43,6 +43,30 @@
       min-height: 100vh;
     }
 
+    /* ── Login-Sperre ── */
+    body.kd-locked > *:not(#login-screen) { display: none !important; }
+    #login-screen {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #login-screen.hidden { display: none; }
+    .login-card {
+      background: white;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 36px 32px;
+      width: 100%;
+      max-width: 360px;
+    }
+    .login-card h1 { font-size: 1.4rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+    .login-card p { color: var(--gray-600); font-size: 13px; margin-bottom: 22px; }
+    .login-card .form-group { margin-bottom: 14px; }
+    .login-error { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 16px; }
+    .login-card button[type="submit"] { width: 100%; margin-top: 6px; }
+
     /* ── Layout ── */
     .app { display: flex; min-height: 100vh; }
 
@@ -81,6 +105,19 @@
     .nav-item:hover { background: var(--gray-100); color: var(--gray-800); }
     .nav-item.active { background: var(--green-light); color: var(--green-dark); font-weight: 600; }
     .nav-icon { font-size: 1.2rem; width: 24px; text-align: center; }
+    /* Eigene Klasse (bewusst NICHT .nav-item), damit der Logout-Button die
+       index-basierte Aktiv-Markierung von .nav-item/.bottom-nav-item nicht verschiebt */
+    .nav-logout-btn {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      color: var(--gray-600);
+      transition: all 0.15s;
+      border: none; background: none; width: 100%; text-align: left;
+    }
+    .nav-logout-btn:hover { background: var(--gray-100); }
 
     /* Main content */
     .main {
@@ -402,7 +439,25 @@
     .klasse-color-swatch { width:36px; height:36px; border-radius:8px; border:2px solid rgba(0,0,0,0.1); cursor:pointer; padding:2px; }
   </style>
 </head>
-<body>
+<body class="kd-locked">
+
+<!-- Login -->
+<div id="login-screen">
+  <form class="login-card" id="login-form" onsubmit="return kdLogin(event)">
+    <h1>🦊 KlassenFux</h1>
+    <p>Bitte melde dich an, um auf die Klassen- und Schülerdaten zuzugreifen.</p>
+    <div class="form-group">
+      <label class="form-label">E-Mail</label>
+      <input class="form-input" id="login-email" type="email" autocomplete="username" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Passwort</label>
+      <input class="form-input" id="login-password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn btn-primary" type="submit" id="login-submit">Anmelden</button>
+    <div class="login-error" id="login-error"></div>
+  </form>
+</div>
 
 <!-- Sidebar -->
 <div class="sidebar">
@@ -430,6 +485,11 @@
       <span class="nav-icon">🔄</span> Import/Export
     </button>
   </nav>
+  <div style="padding:12px;border-top:1px solid var(--gray-200);">
+    <button class="nav-logout-btn" onclick="kdLogout()">
+      <span class="nav-icon">🚪</span> Abmelden
+    </button>
+  </div>
 </div>
 
 <!-- Mobile header -->
@@ -604,6 +664,15 @@
     <div class="page-header">
       <div class="page-title">Einstellungen</div>
       <span id="autosave-indicator" style="font-size:0.8rem; color:var(--gray-400); align-self:center;"></span>
+    </div>
+
+    <!-- Konto -->
+    <div class="settings-section">
+      <div class="settings-section-title">🔐 Konto</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="font-size:13px;color:var(--gray-600);">Angemeldet als <span id="konto-email" style="font-weight:600;color:var(--gray-800);">…</span></div>
+        <button class="btn btn-secondary btn-sm" onclick="kdLogout()">🚪 Abmelden</button>
+      </div>
     </div>
 
     <!-- Allgemeine Daten -->
@@ -1058,6 +1127,52 @@
 const SUPABASE_URL = 'https://gwmhzmfrwrymakuzgkdu.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd3bWh6bWZyd3J5bWFrdXpna2R1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NTI0NjEsImV4cCI6MjEwMTMyODQ2MX0.9Nm3iutjRPJKcp6e4RJbIoSSmzQVfuxSyz06fpfauQQ';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── Auth / Login ──
+async function kdCheckSession() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    kdUnlockApp(session);
+  } else {
+    document.body.classList.add('kd-locked');
+  }
+}
+
+function kdUnlockApp(session) {
+  document.body.classList.remove('kd-locked');
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) loginScreen.classList.add('hidden');
+  const kontoEmail = document.getElementById('konto-email');
+  if (kontoEmail) kontoEmail.textContent = session?.user?.email || '–';
+  loadStats();
+}
+
+async function kdLogin(event) {
+  event.preventDefault();
+  const submitBtn = document.getElementById('login-submit');
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Anmelden…';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Anmelden';
+  if (error) {
+    errEl.textContent = error.message === 'Invalid login credentials'
+      ? 'E-Mail oder Passwort falsch.'
+      : 'Fehler: ' + error.message;
+    return false;
+  }
+  kdUnlockApp(data.session);
+  return false;
+}
+
+async function kdLogout() {
+  await sb.auth.signOut();
+  location.reload();
+}
 
 // ── State ──
 let allKlassen = [];
@@ -6493,7 +6608,7 @@ async function upToggleAusgefallen(tagNr, stunde) {
 }
 
 // ── Init ──
-loadStats();
+kdCheckSession();
 </script>
 </body>
 </html>
