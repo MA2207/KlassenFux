@@ -1211,6 +1211,15 @@ async function kdOeffneKlasse(klasseId) {
   kdScrollZuHeute();
 }
 
+// Öffnet die Klasse eines Schülers und springt direkt zur Notenübersicht Schüler, vorausgewählt auf ihn
+// (verwendet z.B. vom "Noten"-Button in der globalen Schülerliste)
+async function kdSpringeZuSchuelerNoten(schuelerId, klasseId) {
+  await kdOeffneKlasse(klasseId);
+  kdNotenAnsicht = 'uebersicht2';
+  kdNotenUeb2SchuelerId = schuelerId;
+  await kdZeigeUnterseite('noten');
+}
+
 function kdZeigeUnterseite(seite) {
   kdAktiveUnterseite = seite;
   document.querySelectorAll('[data-kd-tab]').forEach(btn => {
@@ -4273,6 +4282,7 @@ function renderSchueler(list) {
         </div>
         <div class="list-item-sub">${s.klassen ? s.klassen.name + ' · ' + s.klassen.schuljahr : 'Keine Klasse'}</div>
       </div>
+      ${s.klasse_id ? `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNoten('${s.id}', '${s.klasse_id}')" class="btn btn-secondary btn-sm" style="margin-right:8px;">📊 Noten</button>` : ''}
       <span style="color:var(--gray-400);">›</span>
     </div>
   `).join('');
