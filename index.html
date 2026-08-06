@@ -1157,6 +1157,10 @@ let kdNotenUeb2Suche = '';            // Sucheingabe für Schülerfilter in Note
 let kdNotenUeb3Hj = 1;                 // angezeigtes Halbjahr in Notenübersicht Heatmap
 let kdNotenUeb3Sortierung = null;      // { key, richtung } — Sortierung der Schülerzeilen
 let kdNotenUeb3Offen = new Set();      // aufgeklappte Detailzellen, Key: "<schuelerId>::<hauptkatname>"
+let kdNotenUeb4SchuelerId = null;      // Schülerfilter in Notenübersicht Liste (null = alle)
+let kdNotenUeb4Hj = 0;                  // Halbjahrfilter: 0 = beide, 1, 2
+let kdNotenUeb4Suche = '';              // Sucheingabe (Titel/Schüler) in Notenübersicht Liste
+let kdNotenUeb4Sortierung = { key: 'datum', richtung: 'desc' }; // Sortierung der Notenliste
 
 function kdScrollZuHeute() {
   const { kw, jahr } = getISOWeek(new Date());
@@ -3994,6 +3998,157 @@ function kdRenderNotenUebersicht3() {
   return html;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// Notenübersicht Liste — vierte Ansicht: ein durchsuchbares/sortierbares
+// Protokoll ALLER einzeln erteilten Noten (eine Zeile je Note, keine
+// Aggregation, kein Aufklappen nötig). Beantwortet direkt die Frage
+// "was hat wer wann in welcher Kategorie bekommen?".
+// ══════════════════════════════════════════════════════════════════
+
+function kdNotenUeb4SetSchueler(id) { kdNotenUeb4SchuelerId = id || null; kdRenderNoten(); }
+function kdNotenUeb4SetHj(hj) { kdNotenUeb4Hj = hj; kdRenderNoten(); }
+function kdNotenUeb4SetSuche(v) { kdNotenUeb4Suche = v; kdRenderNoten(); }
+function kdNotenUeb4Sortieren(key) {
+  if (kdNotenUeb4Sortierung.key === key) {
+    kdNotenUeb4Sortierung.richtung = kdNotenUeb4Sortierung.richtung === 'asc' ? 'desc' : 'asc';
+  } else {
+    kdNotenUeb4Sortierung = { key, richtung: key === 'datum' ? 'desc' : 'asc' };
+  }
+  kdRenderNoten();
+}
+
+function kdRenderNotenUebersicht4() {
+  const faecher = kdNotenKlassenFaecher();
+  if (faecher.length === 0) {
+    return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📋</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Fächer in dieser Klasse</div>
+      <div style="font-size:13px;">Weise dieser Klasse im Stundenplan Fächer zu.</div>
+    </div>`;
+  }
+  if (!kdNotenUebFach || !faecher.includes(kdNotenUebFach)) kdNotenUebFach = faecher[0];
+  if (kdSchueler.length === 0) {
+    return `<div style="margin-bottom:18px;">${kdRenderNotenUebFachChips(faecher)}</div>
+      <div style="text-align:center;padding:32px 24px;color:var(--gray-400);font-size:13px;">Keine Schüler in dieser Klasse.</div>`;
+  }
+
+  const fmt2 = (v) => v == null || isNaN(v) ? '–' : v.toFixed(2).replace('.', ',');
+  const alleEintraegeFach = kdNotenEintraege.filter(e => e.fach === kdNotenUebFach);
+
+  // Flache Liste: eine Zeile je tatsächlich erteilter Note (inkl. k/e)
+  let zeilen = [];
+  alleEintraegeFach.forEach(e => {
+    const hj = kdNotenEintragHalbjahr(e);
+    kdSchueler.forEach(s => {
+      const row = kdNotenWerte.find(w => w.noteneintrag_id === e.id && w.schueler_id === s.id);
+      if (!row || !row.wert) return;
+      const dez = (row.wert === 'k' || row.wert === 'e') ? null : kdNotenWertFuerSchueler(e, s.id);
+      zeilen.push({ eintrag: e, schueler: s, hj, wert: row.wert, dez });
+    });
+  });
+
+  const schuelerMitNoten = [...new Map(zeilen.map(z => [z.schueler.id, z.schueler])).values()]
+    .sort((a, b) => (a.nachname + a.vorname).localeCompare(b.nachname + b.vorname, 'de'));
+
+  let html = `<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;margin-bottom:14px;">
+    <div>${kdRenderNotenUebFachChips(faecher)}</div>
+  </div>`;
+
+  html += `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
+    <div style="min-width:180px;">
+      <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Schüler:</label>
+      <select onchange="kdNotenUeb4SetSchueler(this.value)" style="padding:6px 10px;border:1px solid var(--gray-200);border-radius:8px;font-size:12.5px;width:100%;">
+        <option value="">Alle Schüler</option>
+        ${schuelerMitNoten.map(s => `<option value="${s.id}" ${kdNotenUeb4SchuelerId === s.id ? 'selected' : ''}>${s.nachname}, ${s.vorname}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Halbjahr:</label>
+      <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;width:fit-content;">
+        <button onclick="kdNotenUeb4SetHj(0)" style="${kdNotenUeb4Hj === 0 ? 'background:#1d4ed8;color:white;' : 'background:transparent;color:var(--gray-500);'}border:none;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">Beide</button>
+        <button onclick="kdNotenUeb4SetHj(1)" style="${kdNotenUeb4Hj === 1 ? 'background:#1d4ed8;color:white;' : 'background:transparent;color:var(--gray-500);'}border:none;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">1. Hj</button>
+        <button onclick="kdNotenUeb4SetHj(2)" style="${kdNotenUeb4Hj === 2 ? 'background:#1d4ed8;color:white;' : 'background:transparent;color:var(--gray-500);'}border:none;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">2. Hj</button>
+      </div>
+    </div>
+    <div style="flex:1;min-width:180px;">
+      <label style="font-size:12px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:6px;">Suche:</label>
+      <input type="text" value="${kdNotenUeb4Suche.replace(/"/g, '&quot;')}" oninput="kdNotenUeb4SetSuche(this.value)" placeholder="🔍 Titel oder Schüler…"
+        style="width:100%;padding:6px 10px;border:1px solid var(--gray-200);border-radius:8px;font-size:12.5px;box-sizing:border-box;">
+    </div>
+  </div>`;
+
+  if (kdNotenUeb4SchuelerId) zeilen = zeilen.filter(z => z.schueler.id === kdNotenUeb4SchuelerId);
+  if (kdNotenUeb4Hj !== 0) zeilen = zeilen.filter(z => z.hj === kdNotenUeb4Hj);
+  const sucheL = kdNotenUeb4Suche.trim().toLowerCase();
+  if (sucheL) {
+    zeilen = zeilen.filter(z =>
+      (z.eintrag.titel || '').toLowerCase().includes(sucheL) ||
+      `${z.schueler.nachname} ${z.schueler.vorname}`.toLowerCase().includes(sucheL) ||
+      (z.eintrag.hauptkategorie || '').toLowerCase().includes(sucheL) ||
+      (z.eintrag.unterkategorie || '').toLowerCase().includes(sucheL)
+    );
+  }
+
+  const { key, richtung } = kdNotenUeb4Sortierung;
+  const faktor = richtung === 'asc' ? 1 : -1;
+  zeilen.sort((a, b) => {
+    let va, vb;
+    if (key === 'datum') { va = a.eintrag.datum || ''; vb = b.eintrag.datum || ''; return faktor * va.localeCompare(vb); }
+    if (key === 'schueler') { return faktor * (a.schueler.nachname + a.schueler.vorname).toLowerCase().localeCompare((b.schueler.nachname + b.schueler.vorname).toLowerCase(), 'de'); }
+    if (key === 'kategorie') { va = (a.eintrag.hauptkategorie || '') + (a.eintrag.unterkategorie || ''); vb = (b.eintrag.hauptkategorie || '') + (b.eintrag.unterkategorie || ''); return faktor * va.localeCompare(vb, 'de'); }
+    if (key === 'titel') { return faktor * (a.eintrag.titel || '').localeCompare(b.eintrag.titel || '', 'de'); }
+    if (key === 'note') {
+      va = a.dez; vb = b.dez;
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return faktor * (va - vb);
+    }
+    return 0;
+  });
+
+  const pfeil = (k) => key === k ? (richtung === 'asc' ? ' ▲' : ' ▼') : '';
+  const th = (k, label, extra) => `<th onclick="kdNotenUeb4Sortieren('${k}')" style="position:sticky;top:0;z-index:2;background:var(--gray-100);padding:8px 10px;font-size:11px;font-weight:700;color:#000000;cursor:pointer;white-space:nowrap;text-align:left;${extra || ''}">${label}${pfeil(k)}</th>`;
+
+  let kopf = th('datum', 'Datum') + th('schueler', 'Schüler') + th('kategorie', 'Kategorie') + th('titel', 'Titel') + `<th style="position:sticky;top:0;z-index:2;background:var(--gray-100);padding:8px 10px;font-size:11px;font-weight:700;color:#000000;white-space:nowrap;">Hj</th>` + th('note', 'Note', 'text-align:center;');
+
+  let body = '';
+  if (zeilen.length === 0) {
+    body = `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--gray-400);font-size:13px;">Keine Noten gefunden.</td></tr>`;
+  } else {
+    zeilen.forEach((z, idx) => {
+      const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      const datumStr = z.eintrag.datum ? new Date(z.eintrag.datum + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '–';
+      const kategorie = `${z.eintrag.hauptkategorie || ''}${z.eintrag.unterkategorie ? ' · ' + z.eintrag.unterkategorie : ''}`;
+      let noteHtml;
+      if (z.wert === 'k' || z.wert === 'e') {
+        noteHtml = `<span style="background:var(--gray-100);color:var(--gray-500);border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:700;">${z.wert === 'k' ? 'krank' : 'entsch.'}</span>`;
+      } else {
+        const farbe = kdNotenUeb2Farbe(z.dez);
+        noteHtml = `<span style="background:${farbe.bg};color:${farbe.fg};border-radius:6px;padding:2px 10px;font-size:12px;font-weight:700;">${z.wert}</span>`;
+      }
+      body += `<tr style="background:${rowBg};">
+        <td style="padding:7px 10px;font-size:12.5px;color:var(--gray-600);white-space:nowrap;border-top:1px solid var(--gray-100);">${datumStr}</td>
+        <td style="padding:7px 10px;font-size:12.5px;font-weight:600;color:var(--gray-800);white-space:nowrap;border-top:1px solid var(--gray-100);">${z.schueler.nachname}, ${z.schueler.vorname}</td>
+        <td style="padding:7px 10px;font-size:12.5px;color:var(--gray-600);white-space:nowrap;border-top:1px solid var(--gray-100);">${kategorie}</td>
+        <td style="padding:7px 10px;font-size:12.5px;color:var(--gray-800);border-top:1px solid var(--gray-100);">${z.eintrag.titel || '(ohne Titel)'}</td>
+        <td style="padding:7px 10px;font-size:12px;color:var(--gray-500);white-space:nowrap;border-top:1px solid var(--gray-100);">${z.hj}. Hj</td>
+        <td style="padding:5px 10px;text-align:center;border-top:1px solid var(--gray-100);">${noteHtml}</td>
+      </tr>`;
+    });
+  }
+
+  html += `<div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">${zeilen.length} Note${zeilen.length === 1 ? '' : 'n'} · Kopfzeile klicken zum Sortieren.</div>`;
+  html += `<div style="border-radius:14px;border:1px solid var(--gray-200);box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:auto;max-height:75vh;">
+    <table style="border-collapse:separate;border-spacing:0;width:100%;">
+      <thead><tr>${kopf}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`;
+
+  return html;
+}
+
 function kdRenderNoten() {
   const container = document.getElementById('kd-content');
   if (kdAktiveUnterseite !== 'noten') return;
@@ -4008,11 +4163,13 @@ function kdRenderNoten() {
       <button onclick="kdNotenSetAnsicht('uebersicht')" style="${tabBtnStyle('uebersicht')}">🏫 Notenübersicht Klasse</button>
       <button onclick="kdNotenSetAnsicht('uebersicht2')" style="${tabBtnStyle('uebersicht2')}">🧑‍🎓 Notenübersicht Schüler</button>
       <button onclick="kdNotenSetAnsicht('uebersicht3')" style="${tabBtnStyle('uebersicht3')}">🌡️ Notenübersicht Heatmap</button>
+      <button onclick="kdNotenSetAnsicht('uebersicht4')" style="${tabBtnStyle('uebersicht4')}">📋 Notenübersicht Liste</button>
     </div>`;
 
   html += kdNotenAnsicht === 'eingabe' ? kdRenderNotenEingabe()
     : kdNotenAnsicht === 'uebersicht2' ? kdRenderNotenUebersicht2()
     : kdNotenAnsicht === 'uebersicht3' ? kdRenderNotenUebersicht3()
+    : kdNotenAnsicht === 'uebersicht4' ? kdRenderNotenUebersicht4()
     : kdRenderNotenUebersicht();
 
   container.innerHTML = html;
