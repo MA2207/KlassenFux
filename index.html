@@ -2857,16 +2857,37 @@ function kdNotenSetUnterkat(name) { kdNotenUnterkat = name || null; kdRenderNote
 function kdNotenSetEingabeart(art) { kdNotenEingabeart = art; kdRenderNoten(); }
 function kdNotenSetSchluesselIndex(i) { kdNotenSchluesselIndex = parseInt(i) || 0; kdNotenGesamtpunktzahlAktualisieren(); }
 
+// Lässt in Punkte-Feldern nur Zahlen (mit . oder ,) sowie die Buchstaben k (krank) und e (entschuldigt) zu
+function kdNotenPunkteFiltern(inputEl) {
+  let v = inputEl.value;
+  if (/[a-zA-Z]/.test(v)) {
+    const treffer = v.match(/[keKE]/);
+    v = treffer ? treffer[0].toLowerCase() : '';
+  } else {
+    v = v.replace(/[^0-9.,]/g, '');
+  }
+  if (v !== inputEl.value) inputEl.value = v;
+}
+
 function kdNotenZeileAktualisieren(inputEl) {
   const schuelerId = inputEl.id.replace('ne-punkte-', '');
   const anzeige = document.querySelector(`.ne-note-anzeige[data-fuer="${schuelerId}"]`);
-  if (!anzeige) return;
-  const gesamt = parseFloat(document.getElementById('ne-gesamtpunktzahl')?.value) || 0;
-  const punkte = parseFloat(inputEl.value);
-  if (isNaN(punkte) || gesamt <= 0) { anzeige.textContent = ''; return; }
-  const prozent = Math.max(0, Math.min(100, (punkte / gesamt) * 100));
-  const note = kdNotenProzentZuNote(prozent, kdNotenSchluesselIndex);
-  anzeige.textContent = `${prozent.toFixed(1)}% → ${note}`;
+  const roh = (inputEl.value || '').trim().toLowerCase();
+  if (anzeige) {
+    if (roh === 'k') anzeige.textContent = 'krank';
+    else if (roh === 'e') anzeige.textContent = 'entschuldigt';
+    else {
+      const gesamt = parseFloat(document.getElementById('ne-gesamtpunktzahl')?.value) || 0;
+      const punkte = parseFloat(roh.replace(',', '.'));
+      if (isNaN(punkte) || gesamt <= 0) { anzeige.textContent = ''; }
+      else {
+        const prozent = Math.max(0, Math.min(100, (punkte / gesamt) * 100));
+        const note = kdNotenProzentZuNote(prozent, kdNotenSchluesselIndex);
+        anzeige.textContent = `${prozent.toFixed(1)}% → ${note}`;
+      }
+    }
+  }
+  kdNotenSpiegelAktualisieren();
 }
 
 function kdNotenGesamtpunktzahlAktualisieren() {
@@ -2961,11 +2982,16 @@ async function kdNotenEintragSpeichern() {
       if (wert) rows.push({ noteneintrag_id: eintragId, schueler_id: s.id, wert, punkte_erreicht: null });
     } else {
       const inp = document.getElementById('ne-punkte-' + s.id);
-      const punkte = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
-      if (!isNaN(punkte)) {
-        const prozent = gesamtpunktzahl > 0 ? (punkte / gesamtpunktzahl) * 100 : 0;
-        const wert = kdNotenProzentZuNote(prozent, kdNotenSchluesselIndex);
-        rows.push({ noteneintrag_id: eintragId, schueler_id: s.id, wert, punkte_erreicht: punkte });
+      const roh = (inp?.value || '').trim().toLowerCase();
+      if (roh === 'k' || roh === 'e') {
+        rows.push({ noteneintrag_id: eintragId, schueler_id: s.id, wert: roh, punkte_erreicht: null });
+      } else if (roh !== '') {
+        const punkte = parseFloat(roh.replace(',', '.'));
+        if (!isNaN(punkte)) {
+          const prozent = gesamtpunktzahl > 0 ? (punkte / gesamtpunktzahl) * 100 : 0;
+          const wert = kdNotenProzentZuNote(prozent, kdNotenSchluesselIndex);
+          rows.push({ noteneintrag_id: eintragId, schueler_id: s.id, wert, punkte_erreicht: punkte });
+        }
       }
     }
   });
@@ -3123,15 +3149,17 @@ function kdRenderNotenEingabe() {
       let feldHtml = '';
       if (kdNotenEingabeart === 'direkt') {
         const aktuellerWert = bestehend?.wert || '';
-        feldHtml = `<select id="ne-note-${s.id}" style="padding:6px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;width:90px;">
+        feldHtml = `<select id="ne-note-${s.id}" onchange="kdNotenSpiegelAktualisieren()" style="padding:6px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;width:90px;">
           <option value="">–</option>
           ${KD_NOTEN_CODES.map(code => `<option value="${code}" ${code === aktuellerWert ? 'selected' : ''}>${code}</option>`).join('')}
+          <option value="k" ${aktuellerWert === 'k' ? 'selected' : ''}>k (krank)</option>
+          <option value="e" ${aktuellerWert === 'e' ? 'selected' : ''}>e (entschuldigt)</option>
         </select>`;
       } else {
-        const punkteVal = bestehend?.punkte_erreicht ?? '';
+        const punkteVal = bestehend ? (bestehend.wert === 'k' || bestehend.wert === 'e' ? bestehend.wert : (bestehend.punkte_erreicht ?? '')) : '';
         feldHtml = `
-          <input type="number" step="0.5" min="0" id="ne-punkte-${s.id}" data-ne-punkte value="${punkteVal}"
-            oninput="kdNotenZeileAktualisieren(this)" placeholder="Punkte" style="width:80px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+          <input type="text" inputmode="decimal" id="ne-punkte-${s.id}" data-ne-punkte value="${punkteVal}"
+            oninput="kdNotenPunkteFiltern(this); kdNotenZeileAktualisieren(this)" placeholder="Punkte / k / e" title="Punktzahl, oder k = krank, e = entschuldigt" style="width:100px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
           <span class="ne-note-anzeige" data-fuer="${s.id}" style="font-size:12px;color:var(--gray-500);margin-left:8px;min-width:90px;display:inline-block;"></span>`;
       }
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:${rowBg};border-bottom:1px solid var(--gray-100);">
@@ -3141,6 +3169,8 @@ function kdRenderNotenEingabe() {
     }).join('');
     html += `</div>`;
   }
+
+  html += `<div id="ne-notenspiegel" style="margin-bottom:16px;"></div>`;
 
   html += `<div style="display:flex;gap:10px;">
     <button class="btn btn-primary" onclick="kdNotenEintragSpeichern()">${bearbeiteterEintrag ? '💾 Aktualisieren' : '💾 Speichern'}</button>
@@ -3152,33 +3182,77 @@ function kdRenderNotenEingabe() {
 
 // Notenspiegel: gruppiert +/- Abstufungen zur ganzen Note (2-, 2, 2+ zählen alle als "2"),
 // berechnet daraus den Durchschnitt sowie den Anteil der Klasse, der schlechter als 4- steht.
-function kdNotenGanzeZahl(code) { return parseInt(code.replace('+', '').replace('-', ''), 10); }
+// Schüler mit k (krank) oder e (entschuldigt) zählen nicht mit. Der Durchschnitt wird erst
+// angezeigt, wenn für ALLE Schüler etwas eingetragen ist (Note oder k/e).
+function kdNotenGanzeZahl(code) { return parseInt(String(code).replace('+', '').replace('-', ''), 10); }
 
-function kdNotenSpiegelBerechnen(eintragId) {
-  const werte = kdNotenWerte.filter(w => w.noteneintrag_id === eintragId && w.wert);
+// Kernberechnung: erwartet eine Liste bereits aufgelöster Werte ('1'…'6', mit +/-, oder 'k'/'e')
+function kdNotenSpiegelAusWerten(werte, gesamtSchueler) {
   const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
   let summeGanz = 0;
+  let gewertet = 0;
   let schlechterAls4minus = 0;
   const schwelle = KD_NOTE_MAP_DEFAULT['4-']; // 4.25 — Grenze für "schlechter als 4-"
   werte.forEach(w => {
-    const ganz = kdNotenGanzeZahl(w.wert);
-    if (counts[ganz] != null) counts[ganz]++;
+    if (w === 'k' || w === 'e') return; // krank/entschuldigt zählen nicht mit
+    const ganz = kdNotenGanzeZahl(w);
+    if (isNaN(ganz) || counts[ganz] == null) return;
+    counts[ganz]++;
+    gewertet++;
     summeGanz += ganz;
-    const dez = KD_NOTE_MAP_DEFAULT[w.wert];
+    const dez = KD_NOTE_MAP_DEFAULT[w];
     if (dez != null && dez > schwelle) schlechterAls4minus++;
   });
-  const gesamt = werte.length;
+  const erfasst = werte.length; // inkl. k/e — alle Schüler mit irgendeiner Eingabe
+  const vollstaendig = gesamtSchueler > 0 && erfasst >= gesamtSchueler;
   return {
     counts,
-    gesamt,
-    durchschnitt: gesamt > 0 ? summeGanz / gesamt : null,
-    schlechterProzent: gesamt > 0 ? (schlechterAls4minus / gesamt) * 100 : null,
+    erfasst,
+    gewertet,
+    gesamtSchueler,
+    vollstaendig,
+    durchschnitt: (vollstaendig && gewertet > 0) ? summeGanz / gewertet : null,
+    schlechterProzent: (vollstaendig && gewertet > 0) ? (schlechterAls4minus / gewertet) * 100 : null,
   };
 }
 
-function kdRenderNotenSpiegel(eintragId) {
-  const sp = kdNotenSpiegelBerechnen(eintragId);
-  if (sp.gesamt === 0) return '';
+// Notenspiegel für einen bereits gespeicherten Noteneintrag (Landing-Liste)
+function kdNotenSpiegelFuerEintrag(eintragId) {
+  const werte = kdNotenWerte.filter(w => w.noteneintrag_id === eintragId && w.wert).map(w => w.wert);
+  return kdNotenSpiegelAusWerten(werte, kdSchueler.length);
+}
+
+// Liest die aktuell in der Eingabemaske stehenden (noch ungespeicherten) Werte aus dem DOM aus
+function kdNotenSpiegelLiveWerte() {
+  const eingabeart = kdNotenEingabeart;
+  const gesamtpunktzahl = parseFloat(document.getElementById('ne-gesamtpunktzahl')?.value) || 0;
+  const werte = [];
+  kdSchueler.forEach(s => {
+    let roh = '';
+    if (eingabeart === 'direkt') roh = document.getElementById('ne-note-' + s.id)?.value || '';
+    else roh = (document.getElementById('ne-punkte-' + s.id)?.value || '').trim().toLowerCase();
+    if (!roh) return;
+    if (roh === 'k' || roh === 'e') { werte.push(roh); return; }
+    if (eingabeart === 'direkt') { werte.push(roh); return; }
+    const punkte = parseFloat(roh.replace(',', '.'));
+    if (isNaN(punkte) || gesamtpunktzahl <= 0) return;
+    const prozent = Math.max(0, Math.min(100, (punkte / gesamtpunktzahl) * 100));
+    const code = kdNotenProzentZuNote(prozent, kdNotenSchluesselIndex);
+    if (code) werte.push(code);
+  });
+  return werte;
+}
+
+// Aktualisiert die Live-Vorschau des Notenspiegels in der Eingabemaske (bei jeder Änderung aufgerufen)
+function kdNotenSpiegelAktualisieren() {
+  const el = document.getElementById('ne-notenspiegel');
+  if (!el) return;
+  const sp = kdNotenSpiegelAusWerten(kdNotenSpiegelLiveWerte(), kdSchueler.length);
+  el.innerHTML = kdRenderNotenSpiegel(sp);
+}
+
+function kdRenderNotenSpiegel(sp) {
+  if (!sp || sp.erfasst === 0) return '';
   const maxCount = Math.max(1, ...Object.values(sp.counts));
   const balkenFarbe = { 1: '#16a34a', 2: '#16a34a', 3: '#eab308', 4: '#f97316', 5: '#dc2626', 6: '#dc2626' };
   const balken = [1, 2, 3, 4, 5, 6].map(n => {
@@ -3191,13 +3265,19 @@ function kdRenderNotenSpiegel(eintragId) {
     </div>`;
   }).join('');
   const fmt = (v) => v == null ? '–' : v.toFixed(2).replace('.', ',');
+  const krankEntschuldigt = sp.erfasst - sp.gewertet;
+  const rechteSpalte = sp.vollstaendig
+    ? `<div style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--gray-600);">
+        <span>Ø-Note <strong style="color:var(--gray-800);">${fmt(sp.durchschnitt)}</strong> · ${sp.gewertet} Note${sp.gewertet === 1 ? '' : 'n'}${krankEntschuldigt > 0 ? ` · ${krankEntschuldigt} × k/e` : ''}</span>
+        <span>${sp.schlechterProzent == null ? '–' : sp.schlechterProzent.toFixed(0) + '%'} schlechter als 4-</span>
+      </div>`
+    : `<div style="font-size:11px;color:var(--gray-400);max-width:220px;">
+        ${sp.erfasst} von ${sp.gesamtSchueler} erfasst. Durchschnitt erscheint, sobald alle Schüler eine Note oder k/e haben.
+      </div>`;
   return `<div style="display:flex;align-items:flex-end;gap:12px;padding:8px 12px;background:var(--gray-50,#f9fafb);border-top:1px solid var(--gray-100);flex-wrap:wrap;">
     <span style="font-size:10px;font-weight:700;color:var(--gray-500);align-self:center;">Notenspiegel:</span>
     <div style="display:flex;align-items:flex-end;gap:3px;">${balken}</div>
-    <div style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--gray-600);">
-      <span>Ø-Note <strong style="color:var(--gray-800);">${fmt(sp.durchschnitt)}</strong> · ${sp.gesamt} Note${sp.gesamt === 1 ? '' : 'n'}</span>
-      <span>${sp.schlechterProzent == null ? '–' : sp.schlechterProzent.toFixed(0) + '%'} schlechter als 4-</span>
-    </div>
+    ${rechteSpalte}
   </div>`;
 }
 
@@ -3241,7 +3321,7 @@ function kdRenderNotenListe() {
           <button onclick="kdNotenEintragLoeschen('${e.id}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;">🗑</button>
         </div>
       </div>
-      ${kdRenderNotenSpiegel(e.id)}
+      ${kdRenderNotenSpiegel(kdNotenSpiegelFuerEintrag(e.id))}
     </div>`;
   });
   html += '</div>';
@@ -3738,6 +3818,7 @@ function kdRenderNoten() {
 
   container.innerHTML = html;
   if (kdNotenAnsicht === 'eingabe' && kdNotenEingabeart === 'punkte') kdNotenGesamtpunktzahlAktualisieren();
+  if (kdNotenAnsicht === 'eingabe' && kdNotenMaskeOffen) kdNotenSpiegelAktualisieren();
   if (kdNotenAnsicht === 'uebersicht') {
     requestAnimationFrame(kdNotenUebFixierePositionen);
     kdNotenUebGroesseUeberwachen();
