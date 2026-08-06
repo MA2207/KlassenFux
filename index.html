@@ -3079,7 +3079,7 @@ function kdRenderNotenEingabe() {
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
       ${hauptkategorien.map(h => `<button onclick="kdNotenSetHauptkat('${h.name.replace(/'/g, "\\'")}')"
         style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
-        ${h.name === kdNotenHauptkat ? `background:${h.farbe || '#1d4ed8'};color:white;border:2px solid ${h.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${h.name}</button>`).join('')}
+        ${h.name === kdNotenHauptkat ? `background:${h.farbe || '#1d4ed8'};color:${kdKontrastfarbe(h.farbe || '#1d4ed8')};border:2px solid ${h.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${h.name}</button>`).join('')}
     </div>
   </div>`;
 
@@ -3091,7 +3091,7 @@ function kdRenderNotenEingabe() {
           ${!kdNotenUnterkat ? 'background:#1d4ed8;color:white;border:2px solid #1d4ed8;' : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">Keine</button>
         ${unterkategorien.map(u => `<button onclick="kdNotenSetUnterkat('${u.name.replace(/'/g, "\\'")}')"
           style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
-          ${u.name === kdNotenUnterkat ? `background:${u.farbe || '#1d4ed8'};color:white;border:2px solid ${u.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${u.name}</button>`).join('')}
+          ${u.name === kdNotenUnterkat ? `background:${u.farbe || '#1d4ed8'};color:${kdKontrastfarbe(u.farbe || '#1d4ed8')};border:2px solid ${u.farbe || '#1d4ed8'};` : 'background:white;color:var(--gray-700);border:2px solid var(--gray-200);'}">${u.name}</button>`).join('')}
       </div>
     </div>`;
   }
@@ -3526,7 +3526,7 @@ function kdRenderNotenUebersicht() {
       const eingeklappt = istEingeklappt(hj, b.hk.name);
       const icon = eingeklappt ? '▸' : '▾';
       kopf2 += `<th colspan="${blockSpalten(b, eingeklappt)}" rowspan="${eingeklappt ? 3 : 1}" onclick="kdNotenUebToggleBlock(${hj},'${b.hk.name.replace(/'/g, "\\'")}')" title="Ein-/Ausklappen"
-        style="${stickyTop(1, `background:${b.hk.farbe || '#fde68a'};padding:7px 6px;font-size:12px;color:white;cursor:pointer;border-radius:6px 6px 0 0;white-space:nowrap;`)}" title="${(b.hk.name || '').replace(/"/g, '&quot;')}">${icon} ${b.hk.kuerzel || b.hk.name}</th>`;
+        style="${stickyTop(1, `background:${b.hk.farbe || '#fde68a'};padding:7px 6px;font-size:12px;color:${kdKontrastfarbe(b.hk.farbe || '#fde68a')};cursor:pointer;border-radius:6px 6px 0 0;white-space:nowrap;`)}" title="${(b.hk.name || '').replace(/"/g, '&quot;')}">${icon} ${b.hk.kuerzel || b.hk.name}</th>`;
       if (eingeklappt) return;
       if (b.hatUnterkat) {
         b.subgroups.forEach(sg => {
@@ -3917,7 +3917,7 @@ function kdRenderNotenUebersicht3() {
   let kopf = `<th onclick="kdNotenUeb3Sortieren('name')" style="position:sticky;left:0;top:0;z-index:5;background:var(--gray-100);padding:8px 10px;font-size:11px;font-weight:700;color:var(--gray-600);cursor:pointer;border-top-left-radius:12px;text-align:left;white-space:nowrap;">Schüler${pfeil('name')}</th>`;
   hauptkatConfig.forEach(hk => {
     kopf += `<th onclick="kdNotenUeb3Sortieren('${hk.name.replace(/'/g, "\\'")}')" title="${(hk.name || '').replace(/"/g, '&quot;')}"
-      style="position:sticky;top:0;z-index:3;background:${hk.farbe || '#94a3b8'};color:white;padding:8px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:64px;">${hk.kuerzel || hk.name}${pfeil(hk.name)}</th>`;
+      style="position:sticky;top:0;z-index:3;background:${hk.farbe || '#94a3b8'};color:${kdKontrastfarbe(hk.farbe || '#94a3b8')};padding:8px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:64px;">${hk.kuerzel || hk.name}${pfeil(hk.name)}</th>`;
   });
   kopf += `<th onclick="kdNotenUeb3Sortieren('mittelwert')" style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Ø ${hj}. Hj${pfeil('mittelwert')}</th>`;
   kopf += `<th style="position:sticky;top:0;z-index:3;background:var(--gray-700);color:white;padding:8px 8px;font-size:11px;font-weight:700;white-space:nowrap;">ZN errechnet</th>`;
@@ -4934,6 +4934,19 @@ function makeNkFachCard(fach, cfg) {
 
 const KD_NK_FARBPALETTE = ['#3b82f6', '#f97316', '#10b981', '#a855f7', '#ef4444', '#eab308', '#06b6d4', '#ec4899', '#84cc16', '#6366f1'];
 function kdNkDefaultFarbe(index) { return KD_NK_FARBPALETTE[index % KD_NK_FARBPALETTE.length]; }
+
+// Ermittelt automatisch, ob heller oder dunkler Text auf einer (frei wählbaren) Kategoriefarbe
+// besser lesbar ist, statt immer fest "weiß" zu verwenden — sonst sind helle Farben (z.B. Gelb)
+// mit weißer Schrift kaum zu lesen.
+function kdKontrastfarbe(hex) {
+  if (!hex) return '#ffffff';
+  const h = hex.replace('#', '');
+  const voll = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  if (voll.length !== 6) return '#ffffff';
+  const r = parseInt(voll.slice(0, 2), 16), g = parseInt(voll.slice(2, 4), 16), b = parseInt(voll.slice(4, 6), 16);
+  const luminanz = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminanz > 0.6 ? '#1f2937' : '#ffffff';
+}
 
 function makeNkHauptkatRow(hk = {}, index = 0) {
   const div = document.createElement('div');
