@@ -1153,7 +1153,7 @@ let kdNotenZeugnisManuell = []; // manuell erteilte Zeugnisnoten (Tabelle zeugni
 let kdNotenUeb2SchuelerId = null;     // ausgewählter Schüler in Notenübersicht 2
 let kdNotenUeb2Offen = new Set();     // aufgeklappte Hauptkategorie-Details, Key: "<hj>::<hauptkatname>"
 let kdNotenUeb2Suche = '';            // Sucheingabe für Schülerfilter in Notenübersicht 2
-let kdNotenUeb3Hj = 1;                 // angezeigtes Halbjahr in Notenübersicht Heatmap
+let kdNotenUeb3Hj = 1;                 // angezeigtes Halbjahr in Notenübersicht Klasse
 let kdNotenUeb3Sortierung = null;      // { key, richtung } — Sortierung der Schülerzeilen
 let kdNotenUeb3Offen = new Set();      // aufgeklappte Kategorie-Spalten (Key: Hauptkategoriename) in der Heatmap
 let kdNotenUeb4Suche = '';              // Sucheingabe (Schülername) in Notenübersicht Vollständig
@@ -3614,7 +3614,7 @@ function kdRenderNotenUebersicht2() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Notenübersicht Heatmap — dritte Alternativansicht für die ganze Klasse.
+// Notenübersicht Klasse — dritte Alternativansicht für die ganze Klasse.
 // Standardmäßig gibt es genau eine Spalte pro Hauptkategorie (farbcodiert
 // wie ein Notenspiegel-Heatmap), damit die Tabelle nicht mit der Anzahl
 // der Einzelnoten in die Breite wächst. Per Klick auf eine Kategorie-
@@ -3643,7 +3643,7 @@ function kdRenderNotenUebersicht3() {
   const faecher = kdNotenKlassenFaecher();
   if (faecher.length === 0) {
     return `<div style="text-align:center;padding:48px 24px;color:var(--gray-500);">
-      <div style="font-size:2.5rem;margin-bottom:12px;">🌡️</div>
+      <div style="font-size:2.5rem;margin-bottom:12px;">🏫</div>
       <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--gray-600);">Keine Fächer in dieser Klasse</div>
       <div style="font-size:13px;">Weise dieser Klasse im Stundenplan Fächer zu.</div>
     </div>`;
@@ -3980,7 +3980,7 @@ function kdRenderNoten() {
     <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;width:fit-content;margin-bottom:16px;">
       <button onclick="kdNotenSetAnsicht('eingabe')" style="${tabBtnStyle('eingabe')}">✏️ Noteneingabe</button>
       <button onclick="kdNotenSetAnsicht('uebersicht2')" style="${tabBtnStyle('uebersicht2')}">🧑‍🎓 Notenübersicht Schüler</button>
-      <button onclick="kdNotenSetAnsicht('uebersicht3')" style="${tabBtnStyle('uebersicht3')}">🌡️ Notenübersicht Heatmap</button>
+      <button onclick="kdNotenSetAnsicht('uebersicht3')" style="${tabBtnStyle('uebersicht3')}">🏫 Notenübersicht Klasse</button>
       <button onclick="kdNotenSetAnsicht('uebersicht4')" style="${tabBtnStyle('uebersicht4')}">📖 Notenübersicht Vollständig</button>
     </div>`;
 
