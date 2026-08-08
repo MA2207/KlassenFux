@@ -533,6 +533,9 @@
     <button class="nav-item" onclick="showPage('import-export')">
       <span class="nav-icon">🔄</span> Import/Export
     </button>
+    <button class="nav-item" onclick="showPage('todo')">
+      <span class="nav-icon">✅</span> ToDo
+    </button>
   </nav>
 </div>
 
@@ -968,6 +971,24 @@
     <div id="up-day-content"></div>
   </div>
 
+  <!-- TODO -->
+  <div id="page-todo" class="hidden">
+    <div class="page-header">
+      <div class="page-title">ToDo</div>
+      <div style="display:flex;gap:2px;background:var(--gray-100);border-radius:10px;padding:3px;">
+        <button id="todo-tab-offen" onclick="kdTodoAnsichtUmschalten('offen')" style="padding:6px 16px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#1d4ed8;color:white;">📝 Offen</button>
+        <button id="todo-tab-archiv" onclick="kdTodoAnsichtUmschalten('archiv')" style="padding:6px 16px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--gray-500);">🗄 Archiv</button>
+      </div>
+    </div>
+
+    <div id="todo-eingabe" style="display:flex;gap:8px;margin-bottom:16px;">
+      <input class="form-input" id="todo-text" type="text" placeholder="Neue Aufgabe eintragen…" style="flex:1;" onkeydown="if(event.key==='Enter') kdTodoHinzufuegen();">
+      <button class="btn btn-primary" onclick="kdTodoHinzufuegen()">＋ Hinzufügen</button>
+    </div>
+
+    <div id="todo-list"></div>
+  </div>
+
 </div>
 
 <!-- MODAL: Checkliste Spalte -->
@@ -1028,6 +1049,9 @@
     </button>
     <button class="bottom-nav-item" onclick="showPage('import-export')">
       <span class="bottom-nav-icon">🔄</span>Import/Export
+    </button>
+    <button class="bottom-nav-item" onclick="showPage('todo')">
+      <span class="bottom-nav-icon">✅</span>ToDo
     </button>
   </div>
 </div>
@@ -1297,8 +1321,8 @@ let editingSchuelerId = null;
 let currentDetailId = null;
 
 // ── Navigation ──
-const ALL_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','import-export','klasse-detail'];
-const NAV_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','import-export'];
+const ALL_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','import-export','todo','klasse-detail'];
+const NAV_PAGES = ['dashboard','stundenplan','unterrichtsplanung','klassen','schueler','einstellungen','import-export','todo'];
 function showPage(page) {
   ALL_PAGES.forEach(p => {
     document.getElementById('page-' + p).classList.toggle('hidden', p !== page);
@@ -1314,6 +1338,7 @@ function showPage(page) {
   if (page === 'stundenplan') loadStundenplan();
   if (page === 'unterrichtsplanung') loadUnterrichtsplanung();
   if (page === 'import-export') kdImportZuruecksetzen();
+  if (page === 'todo') loadTodos();
 }
 
 // ── Toast ──
@@ -1524,6 +1549,101 @@ async function loadStats() {
 function spZeitLabelAus(einst, idx) {
   const z = (einst.unterrichtszeiten || [])[idx];
   return (z && z.von && z.bis) ? `${z.von}–${z.bis}` : '';
+}
+
+// ── TODO ──
+let kdTodos = [];
+let kdTodoAnsicht = 'offen'; // 'offen' | 'archiv'
+
+async function loadTodos() {
+  const { data } = await sb.from('todos').select('*').order('erstellt_am', { ascending: false });
+  kdTodos = data || [];
+  renderTodos();
+}
+
+function kdTodoAnsichtUmschalten(ansicht) {
+  kdTodoAnsicht = ansicht;
+  const tabStyle = (a) => a === ansicht
+    ? 'background:#1d4ed8;color:white;font-weight:700;'
+    : 'background:transparent;color:var(--gray-500);font-weight:600;';
+  const offenBtn = document.getElementById('todo-tab-offen');
+  const archivBtn = document.getElementById('todo-tab-archiv');
+  if (offenBtn) offenBtn.style.cssText = 'padding:6px 16px;border-radius:8px;border:none;cursor:pointer;font-size:12px;' + tabStyle('offen');
+  if (archivBtn) archivBtn.style.cssText = 'padding:6px 16px;border-radius:8px;border:none;cursor:pointer;font-size:12px;' + tabStyle('archiv');
+  document.getElementById('todo-eingabe').style.display = ansicht === 'offen' ? 'flex' : 'none';
+  renderTodos();
+}
+
+async function kdTodoHinzufuegen() {
+  const input = document.getElementById('todo-text');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  await sb.from('todos').insert({ text, erledigt: false });
+  await loadTodos();
+}
+
+async function kdTodoErledigt(id) {
+  await sb.from('todos').update({ erledigt: true, erledigt_am: new Date().toISOString() }).eq('id', id);
+  await loadTodos();
+}
+
+async function kdTodoWiederherstellen(id) {
+  await sb.from('todos').update({ erledigt: false, erledigt_am: null }).eq('id', id);
+  await loadTodos();
+}
+
+async function kdTodoLoeschen(id) {
+  if (!confirm('Diesen Eintrag endgültig löschen?')) return;
+  await sb.from('todos').delete().eq('id', id);
+  await loadTodos();
+}
+
+function renderTodos() {
+  const container = document.getElementById('todo-list');
+  if (!container) return;
+
+  const liste = kdTodos.filter(t => kdTodoAnsicht === 'offen' ? !t.erledigt : t.erledigt);
+
+  if (liste.length === 0) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">${kdTodoAnsicht === 'offen' ? '📝' : '🗄'}</div>
+      <div class="empty-state-text">${kdTodoAnsicht === 'offen' ? 'Keine offenen Aufgaben.' : 'Archiv ist leer.'}</div>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = liste.map(t => {
+    if (kdTodoAnsicht === 'offen') {
+      return `
+      <div class="list-item">
+        <div class="list-item-info" style="display:flex;align-items:center;gap:12px;">
+          <button onclick="kdTodoErledigt('${t.id}')" title="Als erledigt markieren"
+            style="width:22px;height:22px;border-radius:6px;border:2px solid var(--gray-300);background:white;cursor:pointer;flex-shrink:0;"></button>
+          <div class="list-item-name" style="font-weight:500;">${t.text}</div>
+        </div>
+        <div class="list-item-actions">
+          <button class="btn btn-danger btn-sm" onclick="kdTodoLoeschen('${t.id}')">🗑</button>
+        </div>
+      </div>`;
+    } else {
+      const datum = t.erledigt_am ? new Date(t.erledigt_am).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+      return `
+      <div class="list-item">
+        <div class="list-item-info" style="display:flex;align-items:center;gap:12px;">
+          <span style="width:22px;height:22px;border-radius:6px;background:#dcfce7;color:#15803d;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;">✓</span>
+          <div>
+            <div class="list-item-name" style="text-decoration:line-through;color:var(--gray-400);">${t.text}</div>
+            ${datum ? `<div class="list-item-sub">Erledigt am ${datum}</div>` : ''}
+          </div>
+        </div>
+        <div class="list-item-actions">
+          <button class="btn btn-secondary btn-sm" onclick="kdTodoWiederherstellen('${t.id}')" title="Wiederherstellen">↩️</button>
+          <button class="btn btn-danger btn-sm" onclick="kdTodoLoeschen('${t.id}')">🗑</button>
+        </div>
+      </div>`;
+    }
+  }).join('');
 }
 
 // ── KLASSEN ──
