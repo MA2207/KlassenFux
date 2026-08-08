@@ -1447,6 +1447,7 @@ let kdNotenZeugnisManuell = []; // manuell erteilte Zeugnisnoten (Tabelle zeugni
 let kdNotenUeb2SchuelerId = null;     // ausgewählter Schüler in Notenübersicht 2
 let kdNotenUeb2Offen = new Set();     // aufgeklappte Hauptkategorie-Details, Key: "<hj>::<hauptkatname>"
 let kdNotenUeb2Suche = '';            // Sucheingabe für Schülerfilter in Notenübersicht 2
+let kdNotenUeb2SchnellOffen = new Set(); // offene Schnellnote-Formulare in Notenübersicht 2, Key: "<hj>::<hauptkatname>"
 let kdNotenUeb3Hj = 1;                 // angezeigtes Halbjahr in Notenübersicht Klasse
 let kdNotenUeb3Sortierung = null;      // { key, richtung } — Sortierung der Schülerzeilen
 let kdNotenUeb3Offen = new Set();      // aufgeklappte Kategorie-Spalten (Key: Hauptkategoriename) in der Heatmap
@@ -1524,6 +1525,29 @@ async function kdSpringeZuSchuelerNotenFach(schuelerId, klasseId, fach) {
   kdNotenUeb2SchuelerId = schuelerId;
   kdNotenUebFach = fach;
   await kdZeigeUnterseite('noten');
+}
+
+// Springt direkt zur Notenübersicht 2 für diesen Schüler und öffnet dort gleich
+// das Schnellnote-Formular der ersten Hauptkategorie des ersten Fachs
+// (verwendet vom "⚡ Note"-Button in der globalen Schülerliste)
+async function kdSpringeZuSchuelerSchnellnote(schuelerId, klasseId) {
+  if (!allKlassen.length) await loadKlassen();
+  await kdOeffneKlasse(klasseId);
+  kdNotenAnsicht = 'uebersicht2';
+  kdNotenUeb2SchuelerId = schuelerId;
+  await kdZeigeUnterseite('noten');
+  const faecher = kdNotenKlassenFaecher();
+  if (faecher.length > 0) {
+    kdNotenUebFach = faecher[0];
+    const hauptkategorien = kdNotenHauptkategorien(kdNotenUebFach);
+    if (hauptkategorien.length > 0) {
+      const hj = kdNotenHjFuerDatum(new Date().toISOString().slice(0, 10));
+      const key = hj + '::' + hauptkategorien[0].name;
+      kdNotenUeb2Offen.add(key);
+      kdNotenUeb2SchnellOffen.add(key);
+    }
+  }
+  kdRenderNoten();
 }
 
 function kdZeigeUnterseite(seite) {
@@ -3795,6 +3819,60 @@ function kdNotenUeb2ToggleDetail(hj, hkName) {
   if (kdNotenUeb2Offen.has(key)) kdNotenUeb2Offen.delete(key); else kdNotenUeb2Offen.add(key);
   kdRenderNoten();
 }
+
+// ── Schnellnote: einzelne Note für genau den gewählten Schüler in genau
+// dieser Hauptkategorie erfassen, ohne die volle "Noten eintragen"-Maske
+// mit der ganzen Klassenliste zu öffnen. Legt im Hintergrund einen ganz
+// normalen Noteneintrag mit nur einer Notenzeile an — die Berechnung
+// (Hauptkategorie-Mittelwert etc.) berücksichtigt ihn automatisch mit. ──
+function kdNotenUeb2SchnellOeffnen(hj, hkName) {
+  const key = hj + '::' + hkName;
+  kdNotenUeb2Offen.add(key); // Detailkarte gleich mit aufklappen, damit der Kontext sichtbar ist
+  if (kdNotenUeb2SchnellOffen.has(key)) kdNotenUeb2SchnellOffen.delete(key);
+  else kdNotenUeb2SchnellOffen.add(key);
+  kdRenderNoten();
+}
+
+function kdNotenUeb2SchnellAbbrechen(hj, hkName) {
+  kdNotenUeb2SchnellOffen.delete(hj + '::' + hkName);
+  kdRenderNoten();
+}
+
+async function kdNotenUeb2SchnellSpeichern(hj, hkName) {
+  const key = hj + '::' + hkName;
+  const schuelerId = kdNotenUeb2SchuelerId;
+  if (!schuelerId) return;
+  const wertSel = document.getElementById(`sn-wert-${key}`);
+  const unterSel = document.getElementById(`sn-unter-${key}`);
+  const datumInp = document.getElementById(`sn-datum-${key}`);
+  const titelInp = document.getElementById(`sn-titel-${key}`);
+  const wert = wertSel?.value || '';
+  if (!wert) { showToast('Bitte eine Note wählen.', 'error'); return; }
+  const datum = datumInp?.value || new Date().toISOString().slice(0, 10);
+
+  const eintragDaten = {
+    klasse_id: kdAktiveKlasseId,
+    fach: kdNotenUebFach,
+    hauptkategorie: hkName,
+    unterkategorie: unterSel?.value || null,
+    titel: (titelInp?.value || '').trim(),
+    datum,
+    halbjahr: hj,
+    eingabeart: 'direkt',
+    gesamtpunktzahl: null,
+    notenschluessel_index: null,
+  };
+
+  const { data, error } = await sb.from('noteneintraege').insert(eintragDaten).select().single();
+  if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+  const { error: err2 } = await sb.from('noten').insert({ noteneintrag_id: data.id, schueler_id: schuelerId, wert, punkte_erreicht: null });
+  if (err2) { showToast('Fehler: ' + err2.message, 'error'); return; }
+
+  showToast('Note gespeichert.', 'success');
+  kdNotenUeb2SchnellOffen.delete(key);
+  await kdLadeNoten();
+  kdRenderNoten();
+}
 function kdNotenUeb2SetSuche(v) { kdNotenUeb2Suche = v; kdRenderNoten(); }
 
 // Ampelfarbe je nach Notenwert (1-2 grün, 2-3 gelb, 3-4 orange, 4-6 rot)
@@ -3918,14 +3996,61 @@ function kdRenderNotenUebersicht2() {
         const offen = kdNotenUeb2Offen.has(hj + '::' + hk.name);
         const anzahlNoten = entries.filter(e => kdNotenWertFuerSchueler(e, schueler.id) != null).length;
 
+        const schnellOffen = kdNotenUeb2SchnellOffen.has(hj + '::' + hk.name);
+
         detailHtml += `<div style="border-bottom:1px solid var(--gray-100);">
-          <div onclick="kdNotenUeb2ToggleDetail(${hj},'${hk.name.replace(/'/g, "\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 2px;cursor:pointer;">
-            <span style="width:9px;height:9px;border-radius:50%;background:${hk.farbe || '#94a3b8'};flex-shrink:0;"></span>
-            <span style="flex:1;font-size:12.5px;font-weight:600;color:var(--gray-700);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(hk.name || '').replace(/"/g, '&quot;')}">${hk.kuerzel || hk.name}</span>
-            <span style="font-size:10.5px;color:var(--gray-400);white-space:nowrap;">${hk.gewicht || 0}% · ${anzahlNoten} Note${anzahlNoten === 1 ? '' : 'n'}</span>
-            <span style="background:${farbe.bg};color:${farbe.fg};border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700;min-width:36px;text-align:center;">${fmt2(mw)}</span>
-            <span style="color:var(--gray-300);font-size:11px;">${offen ? '▾' : '▸'}</span>
+          <div style="display:flex;align-items:center;gap:6px;padding:8px 2px;">
+            <div onclick="kdNotenUeb2ToggleDetail(${hj},'${hk.name.replace(/'/g, "\\'")}')" style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;cursor:pointer;">
+              <span style="width:9px;height:9px;border-radius:50%;background:${hk.farbe || '#94a3b8'};flex-shrink:0;"></span>
+              <span style="flex:1;font-size:12.5px;font-weight:600;color:var(--gray-700);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(hk.name || '').replace(/"/g, '&quot;')}">${hk.kuerzel || hk.name}</span>
+              <span style="font-size:10.5px;color:var(--gray-400);white-space:nowrap;">${hk.gewicht || 0}% · ${anzahlNoten} Note${anzahlNoten === 1 ? '' : 'n'}</span>
+              <span style="background:${farbe.bg};color:${farbe.fg};border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700;min-width:36px;text-align:center;">${fmt2(mw)}</span>
+              <span style="color:var(--gray-300);font-size:11px;">${offen ? '▾' : '▸'}</span>
+            </div>
+            <button onclick="event.stopPropagation(); kdNotenUeb2SchnellOeffnen(${hj},'${hk.name.replace(/'/g, "\\'")}')"
+              title="Schnellnote für ${schueler.vorname.replace(/"/g, '&quot;')} eintragen"
+              style="flex-shrink:0;background:${schnellOffen ? '#1d4ed8' : '#eff6ff'};color:${schnellOffen ? 'white' : '#1d4ed8'};border:1px solid #1d4ed8;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700;cursor:pointer;">⚡</button>
           </div>`;
+
+        if (schnellOffen) {
+          const key = hj + '::' + hk.name;
+          const unterkats = hk.unterkategorien || [];
+          detailHtml += `<div style="margin:0 2px 10px 25px;padding:10px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;display:flex;flex-direction:column;gap:8px;">`;
+          if (unterkats.length > 0) {
+            detailHtml += `<div>
+              <label style="font-size:10.5px;font-weight:700;color:var(--gray-500);display:block;margin-bottom:4px;">Unterkategorie</label>
+              <select id="sn-unter-${key}" style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:6px;font-size:12px;box-sizing:border-box;">
+                <option value="">Keine</option>
+                ${unterkats.map(u => `<option value="${u.name.replace(/"/g, '&quot;')}">${u.name}</option>`).join('')}
+              </select>
+            </div>`;
+          }
+          detailHtml += `
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:90px;">
+                <label style="font-size:10.5px;font-weight:700;color:var(--gray-500);display:block;margin-bottom:4px;">Note</label>
+                <select id="sn-wert-${key}" style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:6px;font-size:12px;box-sizing:border-box;">
+                  <option value="">–</option>
+                  ${KD_NOTEN_CODES.map(code => `<option value="${code}">${code}</option>`).join('')}
+                  <option value="k">k (krank)</option>
+                  <option value="e">e (entschuldigt)</option>
+                </select>
+              </div>
+              <div style="flex:1;min-width:110px;">
+                <label style="font-size:10.5px;font-weight:700;color:var(--gray-500);display:block;margin-bottom:4px;">Datum</label>
+                <input type="date" id="sn-datum-${key}" value="${new Date().toISOString().slice(0, 10)}" style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:6px;font-size:12px;box-sizing:border-box;">
+              </div>
+            </div>
+            <div>
+              <label style="font-size:10.5px;font-weight:700;color:var(--gray-500);display:block;margin-bottom:4px;">Titel (optional)</label>
+              <input type="text" id="sn-titel-${key}" placeholder="z.B. mündliche Mitarbeit" style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:6px;font-size:12px;box-sizing:border-box;">
+            </div>
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button onclick="kdNotenUeb2SchnellAbbrechen(${hj},'${hk.name.replace(/'/g, "\\'")}')" class="btn btn-secondary btn-sm" style="font-size:11.5px;">Abbrechen</button>
+              <button onclick="kdNotenUeb2SchnellSpeichern(${hj},'${hk.name.replace(/'/g, "\\'")}')" class="btn btn-primary btn-sm" style="font-size:11.5px;">Speichern</button>
+            </div>
+          </div>`;
+        }
 
         if (offen) {
           if (entries.length === 0) {
@@ -4674,6 +4799,9 @@ function renderSchueler(list) {
       ? faecher.map(f => `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNotenFach('${s.id}','${s.klasse_id}','${f.replace(/'/g, "\\'")}')"
           class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 9px;white-space:nowrap;">📊 ${f}</button>`).join('')
       : (s.klasse_id ? `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNoten('${s.id}','${s.klasse_id}')" class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 9px;">📊 Noten</button>` : '');
+    const schnellBtn = s.klasse_id
+      ? `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerSchnellnote('${s.id}','${s.klasse_id}')" class="btn btn-secondary btn-sm" title="Schnellnote eintragen" style="font-size:11px;padding:4px 9px;">⚡ Note</button>`
+      : '';
     return `
     <div class="list-item" onclick="showDetail('${s.id}')">
       <div class="list-item-info" style="flex:1;min-width:0;">
@@ -4683,7 +4811,7 @@ function renderSchueler(list) {
         <div class="list-item-sub">${s.klassen ? s.klassen.name + ' · ' + s.klassen.schuljahr : 'Keine Klasse'}</div>
       </div>
       <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;">
-        <div style="max-width:320px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;">${notenBtns}</div>
+        <div style="max-width:320px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;">${notenBtns}${schnellBtn}</div>
         <span style="color:var(--gray-400);">›</span>
       </div>
     </div>
