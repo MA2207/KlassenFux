@@ -322,6 +322,8 @@
       .form-row { grid-template-columns: 1fr; }
       .form-row-3 { grid-template-columns: 1fr; }
       .repeat-field { grid-template-columns: 1fr 1fr auto; }
+      .sp-wrapper { display: none; }
+      .sp-mobil { display: block; }
     }
 
     /* Hidden */
@@ -412,6 +414,7 @@
     .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
 
     /* Stundenplan */
+    .sp-mobil { display: none; }
     .sp-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .sp-table { border-collapse: collapse; width: 100%; min-width: 720px; }
     .sp-table thead th { background: var(--green); color: white; padding: 10px 8px; font-size: 0.85rem; font-weight: 600; text-align: center; position: sticky; top: 0; z-index: 1; }
@@ -604,6 +607,7 @@
       <div class="sp-wrapper">
         <table class="sp-table" id="sp-table"></table>
       </div>
+      <div id="sp-mobil" class="sp-mobil"></div>
     </div>
   </div>
 
@@ -6270,8 +6274,56 @@ function spZeitLabel(idx) {
   return (z && z.von && z.bis) ? `${z.von}–${z.bis}` : '';
 }
 
-function renderStundenplan() {
+// Baut die Feld-HTML (Fach, Klasse, Doppelstunde-Button) für eine einzelne Stundenplan-Zelle.
+// Wird sowohl von der Desktop-Tabelle als auch von der mobilen Tagesansicht verwendet,
+// damit beide Darstellungen immer exakt dieselben Daten/Zustände zeigen.
+function spZelleDaten(tag, stunde, isLZ) {
   const faecher = spEinstellungen.faecher || [];
+  const e = spDaten[`${tag}-${stunde}`] || {};
+  const klassenOpts = allKlassen.map(k =>
+    `<option value="${k.id}" ${e.klasse_id === k.id ? 'selected' : ''}>${k.name}</option>`
+  ).join('');
+  const isFrei = e.fach === 'Frei';
+  const klasseObj = e.klasse_id ? allKlassen.find(k => k.id === e.klasse_id) : null;
+  let cellBg = '';
+  if (isFrei) {
+    cellBg = 'background:#bbf7d0;'; // hellgrün für Frei
+  } else if (klasseObj?.farbe) {
+    cellBg = `background:${hexToRgba(klasseObj.farbe, 0.33)};`; // Klassenfarbe mit Transparenz
+  }
+
+  const faecherOpts = faecher.map(f =>
+    `<option value="${f}" ${e.fach === f ? 'selected' : ''}>${f}</option>`
+  ).join('');
+
+  const faecherField = faecher.length > 0
+    ? `<select class="sp-fach-sel" onchange="saveSpZelle(${tag},${stunde})">
+        <option value="">– Fach –</option>
+        <option value="Frei" ${isFrei ? 'selected' : ''}>✓ Frei</option>
+        ${faecherOpts}
+       </select>`
+    : `<input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach'}" value="${e.fach || ''}"
+        onchange="saveSpZelle(${tag},${stunde})">`;
+
+  const isDS = spIstDoppelstundeStart(tag, stunde);
+  const isDSEnd = spIstDoppelstundeEnde(tag, stunde);
+  const dsBadge = isDS
+    ? `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
+    : isDSEnd ? `<button onclick="spToggleDoppelstunde(${tag},${stunde-1})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
+    : `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Als Doppelstunde markieren (mit nächster Stunde)" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:1px dashed #d1d5db;background:transparent;color:#9ca3af;font-size:9px;cursor:pointer;">+ 2h</button>`;
+  const dsBorderTop    = isDS    ? 'border-top:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
+  const dsBorderBottom = isDSEnd ? 'border-bottom:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
+
+  const feldHtml = `${faecherField}
+    <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
+      <option value="">– Klasse –</option>${klassenOpts}
+    </select>
+    ${dsBadge}`;
+
+  return { feldHtml, isFrei, cellBg, dsBorderTop, dsBorderBottom };
+}
+
+function renderStundenplan() {
   let html = '<thead><tr><th class="sp-time-col">Stunde</th>';
   SP_TAGE.forEach(t => html += `<th>${t}</th>`);
   html += '</tr></thead><tbody>';
@@ -6279,59 +6331,17 @@ function renderStundenplan() {
   SP_STUNDEN.forEach((row, idx) => {
     const { stunde, label, isLZ } = row;
     const zeit = spZeitLabel(idx);
-    const lzStyle = '';
 
-    html += `<tr style="${lzStyle}">
+    html += `<tr>
       <td class="sp-time" style="${isLZ ? 'color:#6b7280;font-style:italic;' : ''}">
         ${label}<span class="sp-time-sub">${zeit}</span>
       </td>`;
 
     for (let tag = 1; tag <= 5; tag++) {
-      const e = spDaten[`${tag}-${stunde}`] || {};
-      const klassenOpts = allKlassen.map(k =>
-        `<option value="${k.id}" ${e.klasse_id === k.id ? 'selected' : ''}>${k.name}</option>`
-      ).join('');
-      const faecherOpts = faecher.map(f =>
-        `<option value="${f}" ${e.fach === f ? 'selected' : ''}>${f}</option>`
-      ).join('');
-      // Zellfarbe bestimmen
-      const isFrei = e.fach === 'Frei';
-      const klasseObj = e.klasse_id ? allKlassen.find(k => k.id === e.klasse_id) : null;
-      let cellBg = '';
-      if (isFrei) {
-        cellBg = 'background:#bbf7d0;'; // hellgrün für Frei
-      } else if (klasseObj?.farbe) {
-        cellBg = `background:${hexToRgba(klasseObj.farbe, 0.33)};`; // Klassenfarbe mit Transparenz
-      }
-
-      const faecherOpts2 = faecher.map(f =>
-        `<option value="${f}" ${e.fach === f ? 'selected' : ''}>${f}</option>`
-      ).join('');
-
-      const faecherField = faecher.length > 0
-        ? `<select class="sp-fach-sel" onchange="saveSpZelle(${tag},${stunde})">
-            <option value="">– Fach –</option>
-            <option value="Frei" ${isFrei ? 'selected' : ''}>✓ Frei</option>
-            ${faecherOpts2}
-           </select>`
-        : `<input class="sp-fach" type="text" placeholder="${isLZ ? 'Inhalt LZ' : 'Fach'}" value="${e.fach || ''}"
-            onchange="saveSpZelle(${tag},${stunde})">`;
-
-      const isDS = spIstDoppelstundeStart(tag, stunde);
-      const isDSEnd = spIstDoppelstundeEnde(tag, stunde);
-      const dsBadge = isDS
-        ? `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
-        : isDSEnd ? `<button onclick="spToggleDoppelstunde(${tag},${stunde-1})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
-        : `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Als Doppelstunde markieren (mit nächster Stunde)" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:1px dashed #d1d5db;background:transparent;color:#9ca3af;font-size:9px;cursor:pointer;">+ 2h</button>`;
-      const dsBorderTop    = isDS    ? 'border-top:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
-      const dsBorderBottom = isDSEnd ? 'border-bottom:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
-      html += `<td style="${lzStyle}${cellBg}${dsBorderTop}${dsBorderBottom}">
+      const { feldHtml, isFrei, cellBg, dsBorderTop, dsBorderBottom } = spZelleDaten(tag, stunde, isLZ);
+      html += `<td style="${cellBg}${dsBorderTop}${dsBorderBottom}">
         <div class="sp-cell${isFrei ? ' sp-cell-frei' : ''}" data-tag="${tag}" data-st="${stunde}">
-          ${faecherField}
-          <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
-            <option value="">– Klasse –</option>${klassenOpts}
-          </select>
-          ${dsBadge}
+          ${feldHtml}
         </div>
       </td>`;
     }
@@ -6340,6 +6350,58 @@ function renderStundenplan() {
 
   html += '</tbody>';
   document.getElementById('sp-table').innerHTML = html;
+
+  renderStundenplanMobil();
+}
+
+// ── Mobile Tagesansicht für den Stundenplan (Hochformat Smartphone) ──
+// Statt der breiten 5-Tage-Tabelle (die im Hochformat immer horizontal
+// gescrollt werden musste) zeigt diese Ansicht nur einen Tag auf einmal,
+// mit allen Stunden untereinander gestapelt — passt so ohne Scrollen aufs Display.
+let spMobilTag = (() => {
+  const wd = new Date().getDay(); // 0=So .. 6=Sa
+  return (wd >= 1 && wd <= 5) ? wd : 1;
+})();
+
+function spMobilTagWaehlen(tag) {
+  spMobilTag = tag;
+  renderStundenplanMobil();
+}
+
+function renderStundenplanMobil() {
+  const container = document.getElementById('sp-mobil');
+  if (!container) return;
+
+  const tageKurz = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
+  const tagTabs = tageKurz.map((t, i) => {
+    const tagNr = i + 1;
+    const aktiv = tagNr === spMobilTag;
+    return `<button onclick="spMobilTagWaehlen(${tagNr})"
+      style="flex:1;padding:8px 4px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:700;
+      background:${aktiv ? 'var(--green)' : 'var(--gray-100)'};color:${aktiv ? 'white' : 'var(--gray-600)'};">${t}</button>`;
+  }).join('');
+
+  let html = `<div style="display:flex;gap:4px;margin-bottom:12px;">${tagTabs}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">`;
+
+  SP_STUNDEN.forEach((row, idx) => {
+    const { stunde, label, isLZ } = row;
+    const zeit = spZeitLabel(idx);
+    const { feldHtml, isFrei, cellBg } = spZelleDaten(spMobilTag, stunde, isLZ);
+
+    html += `<div style="display:flex;gap:10px;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden;${cellBg}">
+      <div style="flex:0 0 56px;width:56px;padding:8px 4px;background:${isLZ ? 'var(--gray-100)' : 'rgba(255,255,255,0.5)'};display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--gray-200);">
+        <div style="font-weight:700;font-size:13px;${isLZ ? 'color:var(--gray-500);font-style:italic;' : 'color:var(--gray-700);'}">${label}</div>
+        ${zeit ? `<div style="font-size:9px;color:var(--gray-400);text-align:center;margin-top:2px;">${zeit}</div>` : ''}
+      </div>
+      <div class="sp-cell${isFrei ? ' sp-cell-frei' : ''}" data-tag="${spMobilTag}" data-st="${stunde}" style="flex:1;min-width:0;padding:8px 10px;display:flex;flex-direction:column;gap:4px;justify-content:center;">
+        ${feldHtml}
+      </div>
+    </div>`;
+  });
+
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 async function saveSpZelle(wochentag, stunde) {
