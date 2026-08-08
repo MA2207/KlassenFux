@@ -1329,6 +1329,45 @@ function openModal(id) { document.getElementById(id).classList.remove('hidden');
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
 // ── Dashboard: Stunden des aktuellen Tages ──
+// Baut die "Meine Klassen"-Kachelleiste fürs Dashboard: jede Klasse als Button,
+// der direkt in die Klasse springt, mit Schülerzahl (gesamt/Jungen/Mädchen).
+function kdDashboardKlassenHtml(klassenListe, schuelerRows) {
+  if (!klassenListe.length) return '';
+  const zahlen = {};
+  (schuelerRows || []).forEach(s => {
+    if (!s.klasse_id) return;
+    if (!zahlen[s.klasse_id]) zahlen[s.klasse_id] = { gesamt: 0, jungen: 0, maedchen: 0 };
+    const z = zahlen[s.klasse_id];
+    z.gesamt++;
+    if (s.geschlecht === 'm') z.jungen++;
+    else if (s.geschlecht === 'w') z.maedchen++;
+  });
+
+  let html = `
+    <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:16px 18px;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:var(--gray-600);margin-bottom:12px;">🏫 Meine Klassen</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;">`;
+
+  klassenListe.forEach(k => {
+    const z = zahlen[k.id] || { gesamt: 0, jungen: 0, maedchen: 0 };
+    html += `
+      <button onclick="kdOeffneKlasse('${k.id}')" style="text-align:left;background:var(--gray-50,#f9fafb);border:1.5px solid var(--gray-200);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="width:9px;height:9px;border-radius:50%;background:${k.farbe || '#d1d5db'};display:inline-block;flex-shrink:0;"></span>
+          <span style="font-size:13px;font-weight:700;color:var(--gray-800);">${k.name}</span>
+        </div>
+        <div style="font-size:11px;color:var(--gray-500);display:flex;gap:8px;flex-wrap:wrap;">
+          <span>👥 ${z.gesamt}</span>
+          <span style="color:#2563eb;font-weight:600;">♂ ${z.jungen}</span>
+          <span style="color:#dc2626;font-weight:600;">♀ ${z.maedchen}</span>
+        </div>
+      </button>`;
+  });
+
+  html += `</div></div>`;
+  return html;
+}
+
 async function loadStats() {
   const container = document.getElementById('dashboard-heute');
   if (!container) return;
@@ -1340,9 +1379,19 @@ async function loadStats() {
   const { kw, jahr } = getISOWeek(heute);
   const datumLang = heute.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  // Wochenende: gar nicht erst laden
+  const [{ data: einstRow }, { data: klassen }, { data: versionen }, { data: planRows }, { data: schuelerRows }] = await Promise.all([
+    sb.from('einstellungen').select('daten').eq('id', 1).single(),
+    sb.from('klassen').select('id, name, farbe').order('name'),
+    sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
+    sb.from('unterrichtsplanung').select('*').eq('kalenderwoche', kw).eq('jahr', jahr).eq('wochentag', wochentag),
+    sb.from('schueler').select('klasse_id, geschlecht'),
+  ]);
+
+  const klassenHtml = kdDashboardKlassenHtml(klassen || [], schuelerRows);
+
+  // Wochenende: keine Stundenplan-Daten laden, aber Klassenleiste trotzdem zeigen
   if (wochentag > 5) {
-    container.innerHTML = `
+    container.innerHTML = klassenHtml + `
       <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
         <div style="font-size:2.2rem;margin-bottom:8px;">🌤️</div>
         <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
@@ -1351,20 +1400,13 @@ async function loadStats() {
     return;
   }
 
-  const [{ data: einstRow }, { data: klassen }, { data: versionen }, { data: planRows }] = await Promise.all([
-    sb.from('einstellungen').select('daten').eq('id', 1).single(),
-    sb.from('klassen').select('id, name, farbe').order('name'),
-    sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
-    sb.from('unterrichtsplanung').select('*').eq('kalenderwoche', kw).eq('jahr', jahr).eq('wochentag', wochentag),
-  ]);
-
   const einst = einstRow?.daten || {};
   upEinst = einst;                                   // globale up-Variablen mitbefüllen (Ferien-Cache etc. werden geteilt)
   upFerienDaten = await upLadeFerien(einst.bundesland || '');
   const ferienInfo = upIstFerientag(heuteStr);
 
   if (ferienInfo.istFrei) {
-    container.innerHTML = `
+    container.innerHTML = klassenHtml + `
       <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
         <div style="font-size:2.2rem;margin-bottom:8px;">🏖️</div>
         <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
@@ -1430,7 +1472,7 @@ async function loadStats() {
   });
 
   if (zeilen.length === 0) {
-    container.innerHTML = `
+    container.innerHTML = klassenHtml + `
       <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
         <div style="font-size:2.2rem;margin-bottom:8px;">📭</div>
         <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
@@ -1439,7 +1481,7 @@ async function loadStats() {
     return;
   }
 
-  let html = `
+  let html = klassenHtml + `
     <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;">
       <div style="background:var(--gray-800);color:white;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <span style="font-size:1rem;font-weight:700;">📅 ${datumLang}</span>
