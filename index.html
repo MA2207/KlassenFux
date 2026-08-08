@@ -322,8 +322,6 @@
       .form-row { grid-template-columns: 1fr; }
       .form-row-3 { grid-template-columns: 1fr; }
       .repeat-field { grid-template-columns: 1fr 1fr auto; }
-      .sp-wrapper { display: none; }
-      .sp-mobil { display: block; }
     }
 
     /* Hidden */
@@ -414,7 +412,6 @@
     .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
 
     /* Stundenplan */
-    .sp-mobil { display: none; }
     .sp-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .sp-table { border-collapse: collapse; width: 100%; min-width: 720px; }
     .sp-table thead th { background: var(--green); color: white; padding: 10px 8px; font-size: 0.85rem; font-weight: 600; text-align: center; position: sticky; top: 0; z-index: 1; }
@@ -435,6 +432,22 @@
     .sp-fach-sel:focus { outline: none; border-bottom-color: var(--green); }
     .sp-cell-frei { background: #bbf7d0 !important; }
     .sp-cell-frei .sp-klasse { opacity: 0.4; pointer-events: none; }
+
+    /* Stundenplan im Hochformat: komplette Woche bleibt sichtbar, aber stark
+       verkleinert, damit sie ohne horizontales Scrollen aufs Display passt. */
+    @media (max-width: 768px) {
+      #sp-table-section { padding: 6px !important; }
+      .sp-table { min-width: 0; width: 100%; table-layout: fixed; }
+      .sp-table thead th { padding: 4px 2px; font-size: 0.62rem; }
+      .sp-time-col { width: 30px; }
+      .sp-time { padding: 3px 2px; font-size: 0.6rem; min-width: 0; width: 30px; }
+      .sp-time-sub { font-size: 0.5rem; }
+      .sp-table td { padding: 1px; }
+      .sp-cell { min-width: 0; padding: 2px; gap: 1px; }
+      .sp-fach, .sp-fach-sel, .sp-klasse { font-size: 0.55rem; padding: 1px 2px; }
+      .sp-ds-btn { font-size: 6.5px !important; padding: 1px 0 !important; margin-top: 1px !important; }
+    }
+
     .klasse-color-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
     .klasse-color-swatch { width:36px; height:36px; border-radius:8px; border:2px solid rgba(0,0,0,0.1); cursor:pointer; padding:2px; }
   </style>
@@ -607,7 +620,6 @@
       <div class="sp-wrapper">
         <table class="sp-table" id="sp-table"></table>
       </div>
-      <div id="sp-mobil" class="sp-mobil"></div>
     </div>
   </div>
 
@@ -6308,9 +6320,9 @@ function spZelleDaten(tag, stunde, isLZ) {
   const isDS = spIstDoppelstundeStart(tag, stunde);
   const isDSEnd = spIstDoppelstundeEnde(tag, stunde);
   const dsBadge = isDS
-    ? `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
-    : isDSEnd ? `<button onclick="spToggleDoppelstunde(${tag},${stunde-1})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
-    : `<button onclick="spToggleDoppelstunde(${tag},${stunde})" title="Als Doppelstunde markieren (mit nächster Stunde)" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:1px dashed #d1d5db;background:transparent;color:#9ca3af;font-size:9px;cursor:pointer;">+ 2h</button>`;
+    ? `<button class="sp-ds-btn" onclick="spToggleDoppelstunde(${tag},${stunde})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
+    : isDSEnd ? `<button class="sp-ds-btn" onclick="spToggleDoppelstunde(${tag},${stunde-1})" title="Doppelstunde aufheben" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:none;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.05em;">2h ✓ Doppelstunde</button>`
+    : `<button class="sp-ds-btn" onclick="spToggleDoppelstunde(${tag},${stunde})" title="Als Doppelstunde markieren (mit nächster Stunde)" style="margin-top:3px;width:100%;padding:2px 0;border-radius:4px;border:1px dashed #d1d5db;background:transparent;color:#9ca3af;font-size:9px;cursor:pointer;">+ 2h</button>`;
   const dsBorderTop    = isDS    ? 'border-top:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
   const dsBorderBottom = isDSEnd ? 'border-bottom:2.5px solid #f59e0b;border-left:2.5px solid #f59e0b;border-right:2.5px solid #f59e0b;' : '';
 
@@ -6323,9 +6335,16 @@ function spZelleDaten(tag, stunde, isLZ) {
   return { feldHtml, isFrei, cellBg, dsBorderTop, dsBorderBottom };
 }
 
+// Kurzform der Wochentage — wird auf schmalen Bildschirmen für die Kopfzeile verwendet,
+// damit alle 5 Tage nebeneinander ohne horizontales Scrollen passen.
+const SP_TAGE_KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
+
 function renderStundenplan() {
-  let html = '<thead><tr><th class="sp-time-col">Stunde</th>';
-  SP_TAGE.forEach(t => html += `<th>${t}</th>`);
+  const isMobile = window.innerWidth <= 768;
+  const tageLabels = isMobile ? SP_TAGE_KURZ : SP_TAGE;
+
+  let html = '<thead><tr><th class="sp-time-col">Std.</th>';
+  tageLabels.forEach(t => html += `<th>${t}</th>`);
   html += '</tr></thead><tbody>';
 
   SP_STUNDEN.forEach((row, idx) => {
@@ -6350,58 +6369,18 @@ function renderStundenplan() {
 
   html += '</tbody>';
   document.getElementById('sp-table').innerHTML = html;
-
-  renderStundenplanMobil();
 }
 
-// ── Mobile Tagesansicht für den Stundenplan (Hochformat Smartphone) ──
-// Statt der breiten 5-Tage-Tabelle (die im Hochformat immer horizontal
-// gescrollt werden musste) zeigt diese Ansicht nur einen Tag auf einmal,
-// mit allen Stunden untereinander gestapelt — passt so ohne Scrollen aufs Display.
-let spMobilTag = (() => {
-  const wd = new Date().getDay(); // 0=So .. 6=Sa
-  return (wd >= 1 && wd <= 5) ? wd : 1;
-})();
-
-function spMobilTagWaehlen(tag) {
-  spMobilTag = tag;
-  renderStundenplanMobil();
-}
-
-function renderStundenplanMobil() {
-  const container = document.getElementById('sp-mobil');
-  if (!container) return;
-
-  const tageKurz = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
-  const tagTabs = tageKurz.map((t, i) => {
-    const tagNr = i + 1;
-    const aktiv = tagNr === spMobilTag;
-    return `<button onclick="spMobilTagWaehlen(${tagNr})"
-      style="flex:1;padding:8px 4px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:700;
-      background:${aktiv ? 'var(--green)' : 'var(--gray-100)'};color:${aktiv ? 'white' : 'var(--gray-600)'};">${t}</button>`;
-  }).join('');
-
-  let html = `<div style="display:flex;gap:4px;margin-bottom:12px;">${tagTabs}</div>
-    <div style="display:flex;flex-direction:column;gap:8px;">`;
-
-  SP_STUNDEN.forEach((row, idx) => {
-    const { stunde, label, isLZ } = row;
-    const zeit = spZeitLabel(idx);
-    const { feldHtml, isFrei, cellBg } = spZelleDaten(spMobilTag, stunde, isLZ);
-
-    html += `<div style="display:flex;gap:10px;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden;${cellBg}">
-      <div style="flex:0 0 56px;width:56px;padding:8px 4px;background:${isLZ ? 'var(--gray-100)' : 'rgba(255,255,255,0.5)'};display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--gray-200);">
-        <div style="font-weight:700;font-size:13px;${isLZ ? 'color:var(--gray-500);font-style:italic;' : 'color:var(--gray-700);'}">${label}</div>
-        ${zeit ? `<div style="font-size:9px;color:var(--gray-400);text-align:center;margin-top:2px;">${zeit}</div>` : ''}
-      </div>
-      <div class="sp-cell${isFrei ? ' sp-cell-frei' : ''}" data-tag="${spMobilTag}" data-st="${stunde}" style="flex:1;min-width:0;padding:8px 10px;display:flex;flex-direction:column;gap:4px;justify-content:center;">
-        ${feldHtml}
-      </div>
-    </div>`;
+if (!window._spResizeListener) {
+  window._spResizeListener = true;
+  let _spResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(_spResizeTimer);
+    _spResizeTimer = setTimeout(() => {
+      const page = document.getElementById('page-stundenplan');
+      if (page && !page.classList.contains('hidden')) renderStundenplan();
+    }, 200);
   });
-
-  html += '</div>';
-  container.innerHTML = html;
 }
 
 async function saveSpZelle(wochentag, stunde) {
