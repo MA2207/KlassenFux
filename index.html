@@ -550,48 +550,9 @@
     <div class="page-header">
       <div class="page-title">Dashboard</div>
     </div>
-    <div class="module-grid">
-      <!-- Stundenplan – aktiv -->
-      <div class="module-card active" onclick="showPage('stundenplan')">
-        <div class="module-icon">📅</div>
-        <div class="module-title">Mein Stundenplan</div>
-        <div class="module-desc">Wochenstundenplan mit Fächern, Klassen und Räumen verwalten.</div>
-        <span class="module-badge badge-active">✓ Verfügbar</span>
-      </div>
-
-      <!-- Schülerdaten – aktiv -->
-      <div class="module-card active" onclick="showPage('schueler')">
-        <div class="module-icon">👤</div>
-        <div class="module-title">Schülerdaten</div>
-        <div class="module-desc">Stammdaten, Adressen, Telefonnummern und E-Mail-Adressen aller Schüler verwalten.</div>
-        <span class="module-badge badge-active">✓ Verfügbar</span>
-      </div>
-
-      <!-- Planung – verfügbar -->
-      <div class="module-card active" onclick="showPage('unterrichtsplanung')">
-        <div class="module-icon">📚</div>
-        <div class="module-title">Planung</div>
-        <div class="module-desc">Stunden, Inhalte und Materialien für den Unterricht planen und dokumentieren.</div>
-        <span class="module-badge badge-active">✓ Verfügbar</span>
-      </div>
-
-      <!-- Klassenorganisation – in Bearbeitung -->
-      <div class="module-card active" onclick="showPage('klassen')">
-        <div class="module-icon">🏫</div>
-        <div class="module-title">Klassenorganisation</div>
-        <div class="module-desc">Klassen anlegen, Schuljahre verwalten und Schüler den Klassen zuordnen.</div>
-        <span class="module-badge badge-active">✓ Verfügbar</span>
-      </div>
-
-      <!-- Einstellungen – aktiv -->
-      <div class="module-card active" onclick="showPage('einstellungen')">
-        <div class="module-icon">⚙️</div>
-        <div class="module-title">Einstellungen</div>
-        <div class="module-desc">Lehrername, Schulname, Schuljahr, Unterrichtszeiten und Bundesland konfigurieren.</div>
-        <span class="module-badge badge-active">✓ Verfügbar</span>
-      </div>
+    <div id="dashboard-heute">
+      <div style="text-align:center;padding:40px 20px;color:var(--gray-400);">Lädt…</div>
     </div>
-
   </div>
 
   <!-- STUNDENPLAN -->
@@ -1367,9 +1328,158 @@ function showToast(msg, type = '') {
 function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
-// ── Stats ──
+// ── Dashboard: Stunden des aktuellen Tages ──
 async function loadStats() {
-  // Stats-Karten wurden entfernt; Funktion bleibt als Platzhalter
+  const container = document.getElementById('dashboard-heute');
+  if (!container) return;
+
+  const heute = new Date();
+  const heuteStr = `${heute.getFullYear()}-${String(heute.getMonth()+1).padStart(2,'0')}-${String(heute.getDate()).padStart(2,'0')}`;
+  const wdRoh = heute.getDay(); // 0=So..6=Sa
+  const wochentag = wdRoh === 0 ? 7 : wdRoh; // ISO: 1=Mo..7=So
+  const { kw, jahr } = getISOWeek(heute);
+  const datumLang = heute.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  // Wochenende: gar nicht erst laden
+  if (wochentag > 5) {
+    container.innerHTML = `
+      <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
+        <div style="font-size:2.2rem;margin-bottom:8px;">🌤️</div>
+        <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
+        <div style="font-size:0.9rem;color:var(--gray-400);">Wochenende — kein Unterricht.</div>
+      </div>`;
+    return;
+  }
+
+  const [{ data: einstRow }, { data: klassen }, { data: versionen }, { data: planRows }] = await Promise.all([
+    sb.from('einstellungen').select('daten').eq('id', 1).single(),
+    sb.from('klassen').select('id, name, farbe').order('name'),
+    sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
+    sb.from('unterrichtsplanung').select('*').eq('kalenderwoche', kw).eq('jahr', jahr).eq('wochentag', wochentag),
+  ]);
+
+  const einst = einstRow?.daten || {};
+  upEinst = einst;                                   // globale up-Variablen mitbefüllen (Ferien-Cache etc. werden geteilt)
+  upFerienDaten = await upLadeFerien(einst.bundesland || '');
+  const ferienInfo = upIstFerientag(heuteStr);
+
+  if (ferienInfo.istFrei) {
+    container.innerHTML = `
+      <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
+        <div style="font-size:2.2rem;margin-bottom:8px;">🏖️</div>
+        <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
+        <div style="font-size:0.9rem;color:var(--gray-400);">${ferienInfo.name} — kein Unterricht.</div>
+      </div>`;
+    return;
+  }
+
+  // Gültige Stundenplan-Version für heute ermitteln (neueste mit gueltig_ab <= heute)
+  const alleVersionen = versionen || [];
+  const gueltigeVersion = alleVersionen.slice().reverse().find(v => (v.gueltig_ab || '') <= heuteStr)
+    || alleVersionen[alleVersionen.length - 1];
+
+  let spRows = [];
+  if (gueltigeVersion) {
+    const { data } = await sb.from('stundenplan').select('*').eq('version_id', gueltigeVersion.id).eq('wochentag', wochentag);
+    spRows = data || [];
+  }
+
+  const spIdx = {};
+  spRows.forEach(r => { spIdx[r.stunde] = r; });
+  const planIdx = {};
+  (planRows || []).forEach(r => { planIdx[r.stunde] = r; });
+  const doppelstunden = einst.doppelstunden || [];
+  const istDS = (st) => doppelstunden.some(d => d.wochentag === wochentag && d.stunde === st);
+
+  // Anzuzeigende Stunden ermitteln: nur Slots, die laut Stundenplan tatsächlich
+  // belegt sind (Fach gesetzt und kein "Frei") — das sind die Stunden, die heute
+  // wirklich unterrichtet werden müssen.
+  const skip = new Set();
+  const zeilen = [];
+  SP_STUNDEN.forEach((row, idx) => {
+    const { stunde, label, isLZ } = row;
+    if (skip.has(stunde)) return;
+    const sp = spIdx[stunde];
+    if (!sp || !sp.fach || sp.fach === 'Frei') return;
+
+    const plan = planIdx[stunde] || {};
+    const effFach = plan.fach != null ? plan.fach : sp.fach;
+    const effKlasseId = plan.klasse_id != null ? plan.klasse_id : sp.klasse_id;
+    const klasseObj = effKlasseId ? (klassen || []).find(k => k.id === effKlasseId) : null;
+    const isAusgefallen = !!plan.ausgefallen;
+    const hatInhalt = !!(plan.inhalt || plan.hausaufgaben || plan.notiz);
+
+    let dsLabel = label;
+    let dsZeit = spZeitLabelAus(einst, idx);
+    const isDSStart = istDS(stunde);
+    if (isDSStart) {
+      const nextRow = SP_STUNDEN[idx + 1];
+      const nextSp = nextRow ? spIdx[nextRow.stunde] : null;
+      if (nextRow && nextSp) {
+        skip.add(nextRow.stunde);
+        const endLabel = nextRow.label.replace('.', '');
+        dsLabel = `${label.replace('.', '')}.–${endLabel}. Std.`;
+        const zeit2 = spZeitLabelAus(einst, idx + 1);
+        if (zeit2) dsZeit = `${dsZeit ? dsZeit.split('–')[0] : ''}–${zeit2.split('–')[1] || zeit2}`;
+      }
+    } else {
+      dsLabel = `${label.replace('.', '')}. Std.`;
+    }
+
+    zeilen.push({ dsLabel, dsZeit, isLZ, effFach, klasseObj, isAusgefallen, hatInhalt });
+  });
+
+  if (zeilen.length === 0) {
+    container.innerHTML = `
+      <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
+        <div style="font-size:2.2rem;margin-bottom:8px;">📭</div>
+        <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
+        <div style="font-size:0.9rem;color:var(--gray-400);">Heute stehen laut Stundenplan keine Stunden an.</div>
+      </div>`;
+    return;
+  }
+
+  let html = `
+    <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;">
+      <div style="background:var(--gray-800);color:white;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:1rem;font-weight:700;">📅 ${datumLang}</span>
+        <span style="font-size:12px;opacity:0.75;">${zeilen.length} Stunde${zeilen.length === 1 ? '' : 'n'} heute</span>
+      </div>
+      <div>`;
+
+  zeilen.forEach((z, idx) => {
+    const rowBg = z.isAusgefallen ? '#fff5f5' : (idx % 2 === 0 ? 'var(--white)' : '#fafafa');
+    const dotColor = z.klasseObj?.farbe || '#d1d5db';
+    html += `
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;background:${rowBg};${idx > 0 ? 'border-top:1px solid var(--gray-100);' : ''}">
+        <div style="flex:0 0 88px;width:88px;">
+          <div style="font-size:13px;font-weight:700;color:${z.isLZ ? 'var(--gray-400)' : 'var(--gray-800)'};${z.isLZ ? 'font-style:italic;' : ''}">${z.dsLabel}</div>
+          ${z.dsZeit ? `<div style="font-size:11px;color:var(--gray-400);">${z.dsZeit}</div>` : ''}
+        </div>
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:700;color:var(--gray-800);${z.isAusgefallen ? 'text-decoration:line-through;color:#b91c1c;' : ''}">${z.effFach}</span>
+          ${z.klasseObj ? `<span style="font-size:12px;color:var(--gray-500);display:inline-flex;align-items:center;gap:4px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};display:inline-block;"></span>${z.klasseObj.name}
+          </span>` : ''}
+        </div>
+        <div style="flex-shrink:0;">
+          ${z.isAusgefallen
+            ? `<span style="font-size:10px;font-weight:700;background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:20px;white-space:nowrap;">✕ Ausgefallen</span>`
+            : z.hatInhalt
+              ? `<span style="font-size:10px;font-weight:700;background:#dcfce7;color:#166534;padding:3px 8px;border-radius:20px;white-space:nowrap;">✓ Geplant</span>`
+              : `<span style="font-size:10px;font-weight:600;background:var(--gray-100);color:var(--gray-400);padding:3px 8px;border-radius:20px;white-space:nowrap;">Kein Eintrag</span>`}
+        </div>
+      </div>`;
+  });
+
+  html += `</div></div>`;
+  container.innerHTML = html;
+}
+
+// Wie spZeitLabel, aber ohne Abhängigkeit vom globalen spEinstellungen (Dashboard lädt unabhängig)
+function spZeitLabelAus(einst, idx) {
+  const z = (einst.unterrichtszeiten || [])[idx];
+  return (z && z.von && z.bis) ? `${z.von}–${z.bis}` : '';
 }
 
 // ── KLASSEN ──
