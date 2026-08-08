@@ -1806,7 +1806,7 @@ function kdRenderUnterricht() {
     </div>
 
     <!-- Zusammenfassung -->
-    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+    <div id="kd-uebersicht-stats" style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;position:sticky;z-index:15;background:var(--gray-50);padding:6px 0 10px;">
       <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;gap:2px;min-width:120px;">
         <span style="font-size:22px;font-weight:700;color:var(--gray-800);">${gesamt}</span>
         <span style="font-size:11px;color:var(--gray-500);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Stunden${kdUnterrichtFachFilter ? ' (gefiltert)' : ' gesamt'}</span>
@@ -1932,6 +1932,11 @@ function kdRenderUnterricht() {
 
   html += `</div>`;
   container.innerHTML = html;
+
+  // Stats-Leiste direkt unter dem sticky Kopfbereich fixieren
+  const statsEl = document.getElementById('kd-uebersicht-stats');
+  const kopfEl = document.getElementById('kd-sticky-kopf');
+  if (statsEl && kopfEl) statsEl.style.top = kopfEl.offsetHeight + 'px';
 }
 
 async function kdSpeichereUnterrichtZelle(el) {
