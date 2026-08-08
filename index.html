@@ -1392,6 +1392,48 @@ function kdDashboardKlassenHtml(klassenListe, schuelerRows) {
   return html;
 }
 
+// Baut die "Offene Aufgaben"-Kachel fürs Dashboard: Klick führt zur ToDo-Seite.
+function kdDashboardTodosHtml(todos) {
+  const offen = (todos || []).filter(t => !t.geloescht);
+  if (offen.length === 0) return '';
+  offen.sort((a, b) => {
+    if (a.faellig_am && b.faellig_am) return a.faellig_am < b.faellig_am ? -1 : 1;
+    if (a.faellig_am) return -1;
+    if (b.faellig_am) return 1;
+    return 0;
+  });
+  const heuteStr = new Date().toISOString().slice(0, 10);
+  const anzeige = offen.slice(0, 6);
+
+  let html = `
+    <div onclick="showPage('todo')" style="cursor:pointer;background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:16px 18px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;color:var(--gray-600);">✅ Offene Aufgaben</div>
+        <span style="font-size:11px;font-weight:700;background:#dbeafe;color:#1d4ed8;padding:2px 10px;border-radius:20px;">${offen.length}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">`;
+
+  anzeige.forEach(t => {
+    const istUeberfaellig = t.faellig_am && t.faellig_am < heuteStr;
+    const datumLabel = t.faellig_am
+      ? new Date(t.faellig_am + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+    html += `
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-700);">
+        <span style="width:6px;height:6px;border-radius:50%;background:${istUeberfaellig ? '#dc2626' : '#93c5fd'};flex-shrink:0;"></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.text}</span>
+        ${datumLabel ? `<span style="font-size:11px;font-weight:600;flex-shrink:0;${istUeberfaellig ? 'color:#dc2626;' : 'color:var(--gray-400);'}">📅 ${datumLabel}</span>` : ''}
+      </div>`;
+  });
+
+  if (offen.length > anzeige.length) {
+    html += `<div style="font-size:11px;color:var(--gray-400);">+ ${offen.length - anzeige.length} weitere…</div>`;
+  }
+
+  html += `</div></div>`;
+  return html;
+}
+
 async function loadStats() {
   const container = document.getElementById('dashboard-heute');
   if (!container) return;
@@ -1403,20 +1445,22 @@ async function loadStats() {
   const { kw, jahr } = getISOWeek(heute);
   const datumLang = heute.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  const [{ data: einstRow }, { data: klassen }, { data: versionen }, { data: planRows }, { data: schuelerRows }] = await Promise.all([
+  const [{ data: einstRow }, { data: klassen }, { data: versionen }, { data: planRows }, { data: schuelerRows }, { data: todoRows }] = await Promise.all([
     sb.from('einstellungen').select('daten').eq('id', 1).single(),
     sb.from('klassen').select('*').order('name'),
     sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
     sb.from('unterrichtsplanung').select('*').eq('kalenderwoche', kw).eq('jahr', jahr).eq('wochentag', wochentag),
     sb.from('schueler').select('klasse_id, geschlecht'),
+    sb.from('todos').select('*').eq('erledigt', false),
   ]);
 
   allKlassen = klassen || [];   // global befüllen, damit kdOeffneKlasse() beim Klick auf eine Kachel die Klasse findet
   const klassenHtml = kdDashboardKlassenHtml(klassen || [], schuelerRows);
+  const todosHtml = kdDashboardTodosHtml(todoRows || []);
 
   // Wochenende: keine Stundenplan-Daten laden, aber Klassenleiste trotzdem zeigen
   if (wochentag > 5) {
-    container.innerHTML = klassenHtml + `
+    container.innerHTML = klassenHtml + todosHtml + `
       <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
         <div style="font-size:2.2rem;margin-bottom:8px;">🌤️</div>
         <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
@@ -1431,7 +1475,7 @@ async function loadStats() {
   const ferienInfo = upIstFerientag(heuteStr);
 
   if (ferienInfo.istFrei) {
-    container.innerHTML = klassenHtml + `
+    container.innerHTML = klassenHtml + todosHtml + `
       <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
         <div style="font-size:2.2rem;margin-bottom:8px;">🏖️</div>
         <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
@@ -1497,7 +1541,7 @@ async function loadStats() {
   });
 
   if (zeilen.length === 0) {
-    container.innerHTML = klassenHtml + `
+    container.innerHTML = klassenHtml + todosHtml + `
       <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);padding:40px 20px;text-align:center;">
         <div style="font-size:2.2rem;margin-bottom:8px;">📭</div>
         <div style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:4px;">${datumLang}</div>
@@ -1506,7 +1550,7 @@ async function loadStats() {
     return;
   }
 
-  let html = klassenHtml + `
+  let html = klassenHtml + todosHtml + `
     <div style="background:var(--white);border-radius:14px;border:1px solid var(--gray-200);overflow:hidden;">
       <div style="background:var(--gray-800);color:white;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <span style="font-size:1rem;font-weight:700;">📅 ${datumLang}</span>
@@ -1604,10 +1648,17 @@ async function kdTodoErledigt(id) {
 }
 
 async function kdTodoWiederherstellen(id) {
-  await sb.from('todos').update({ erledigt: false, erledigt_am: null }).eq('id', id);
+  await sb.from('todos').update({ erledigt: false, erledigt_am: null, geloescht: false, geloescht_am: null }).eq('id', id);
   await loadTodos();
 }
 
+// Verschiebt eine offene Aufgabe ins Archiv, statt sie sofort endgültig zu löschen.
+async function kdTodoArchivieren(id) {
+  await sb.from('todos').update({ geloescht: true, geloescht_am: new Date().toISOString() }).eq('id', id);
+  await loadTodos();
+}
+
+// Endgültiges Löschen ist nur aus dem Archiv heraus möglich.
 async function kdTodoLoeschen(id) {
   if (!confirm('Diesen Eintrag endgültig löschen?')) return;
   await sb.from('todos').delete().eq('id', id);
@@ -1618,7 +1669,7 @@ function renderTodos() {
   const container = document.getElementById('todo-list');
   if (!container) return;
 
-  const liste = kdTodos.filter(t => kdTodoAnsicht === 'offen' ? !t.erledigt : t.erledigt);
+  const liste = kdTodos.filter(t => kdTodoAnsicht === 'offen' ? (!t.erledigt && !t.geloescht) : (t.erledigt || t.geloescht));
   if (kdTodoAnsicht === 'offen') {
     // Aufgaben mit Fälligkeitsdatum zuerst (aufsteigend), Aufgaben ohne Datum danach
     liste.sort((a, b) => {
@@ -1655,18 +1706,24 @@ function renderTodos() {
           </div>
         </div>
         <div class="list-item-actions">
-          <button class="btn btn-danger btn-sm" onclick="kdTodoLoeschen('${t.id}')">🗑</button>
+          <button class="btn btn-danger btn-sm" onclick="kdTodoArchivieren('${t.id}')" title="In den Papierkorb / Archiv verschieben">🗑</button>
         </div>
       </div>`;
     } else {
-      const datum = t.erledigt_am ? new Date(t.erledigt_am).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+      const istGeloescht = !!t.geloescht;
+      const datum = istGeloescht
+        ? (t.geloescht_am ? new Date(t.geloescht_am).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '')
+        : (t.erledigt_am ? new Date(t.erledigt_am).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
+      const icon = istGeloescht
+        ? `<span style="width:22px;height:22px;border-radius:6px;background:#fee2e2;color:#991b1b;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;">🗑</span>`
+        : `<span style="width:22px;height:22px;border-radius:6px;background:#dcfce7;color:#15803d;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;">✓</span>`;
       return `
       <div class="list-item">
         <div class="list-item-info" style="display:flex;align-items:center;gap:12px;">
-          <span style="width:22px;height:22px;border-radius:6px;background:#dcfce7;color:#15803d;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;">✓</span>
+          ${icon}
           <div>
             <div class="list-item-name" style="text-decoration:line-through;color:var(--gray-400);">${t.text}</div>
-            ${datum ? `<div class="list-item-sub">Erledigt am ${datum}</div>` : ''}
+            ${datum ? `<div class="list-item-sub">${istGeloescht ? 'Gelöscht am' : 'Erledigt am'} ${datum}</div>` : ''}
           </div>
         </div>
         <div class="list-item-actions">
