@@ -494,11 +494,9 @@
 
 <!-- Sidebar -->
 <div class="sidebar">
-  <div class="sidebar-logo"><span>🦊</span> KlassenFux</div>
-  <div style="padding:8px 12px;border-bottom:1px solid var(--gray-200);">
-    <button class="nav-logout-btn" onclick="kdLogout()">
-      <span class="nav-icon">🚪</span> Abmelden
-    </button>
+  <div class="sidebar-logo" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <span><span>🦊</span> KlassenFux</span>
+    <button onclick="kdLogout()" title="Abmelden" style="background:none;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:0.7rem;color:var(--gray-500);padding:4px 7px;display:flex;align-items:center;gap:3px;flex-shrink:0;">🚪 Abmelden</button>
   </div>
   <nav class="sidebar-nav">
     <button class="nav-item active" onclick="showPage('dashboard')">
@@ -526,8 +524,9 @@
 </div>
 
 <!-- Mobile header -->
-<div class="mobile-header">
+<div class="mobile-header" style="justify-content:space-between;align-items:center;">
   <div class="mobile-title">🦊 KlassenFux</div>
+  <button onclick="kdLogout()" title="Abmelden" style="background:none;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:0.7rem;color:var(--gray-500);padding:4px 7px;display:flex;align-items:center;gap:3px;">🚪 Abmelden</button>
 </div>
 
 <!-- Main -->
