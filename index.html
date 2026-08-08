@@ -1350,16 +1350,14 @@ function kdDashboardKlassenHtml(klassenListe, schuelerRows) {
 
   klassenListe.forEach(k => {
     const z = zahlen[k.id] || { gesamt: 0, jungen: 0, maedchen: 0 };
+    const farbe = k.farbe || '#d1d5db';
     html += `
-      <button onclick="kdOeffneKlasse('${k.id}')" style="text-align:left;background:var(--gray-50,#f9fafb);border:1.5px solid var(--gray-200);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <span style="width:9px;height:9px;border-radius:50%;background:${k.farbe || '#d1d5db'};display:inline-block;flex-shrink:0;"></span>
-          <span style="font-size:13px;font-weight:700;color:var(--gray-800);">${k.name}</span>
-        </div>
-        <div style="font-size:11px;color:var(--gray-500);display:flex;gap:8px;flex-wrap:wrap;">
+      <button onclick="kdOeffneKlasse('${k.id}')" style="text-align:left;background:${farbe};border:1.5px solid rgba(0,0,0,0.08);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:17px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.25);">${k.name}</div>
+        <div style="font-size:11px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.25);display:flex;gap:8px;flex-wrap:wrap;">
           <span>👥 ${z.gesamt}</span>
-          <span style="color:#2563eb;font-weight:600;">♂ ${z.jungen}</span>
-          <span style="color:#dc2626;font-weight:600;">♀ ${z.maedchen}</span>
+          <span>♂ ${z.jungen}</span>
+          <span>♀ ${z.maedchen}</span>
         </div>
       </button>`;
   });
@@ -1381,12 +1379,13 @@ async function loadStats() {
 
   const [{ data: einstRow }, { data: klassen }, { data: versionen }, { data: planRows }, { data: schuelerRows }] = await Promise.all([
     sb.from('einstellungen').select('daten').eq('id', 1).single(),
-    sb.from('klassen').select('id, name, farbe').order('name'),
+    sb.from('klassen').select('*').order('name'),
     sb.from('stundenplan_versionen').select('*').order('gueltig_ab'),
     sb.from('unterrichtsplanung').select('*').eq('kalenderwoche', kw).eq('jahr', jahr).eq('wochentag', wochentag),
     sb.from('schueler').select('klasse_id, geschlecht'),
   ]);
 
+  allKlassen = klassen || [];   // global befüllen, damit kdOeffneKlasse() beim Klick auf eine Kachel die Klasse findet
   const klassenHtml = kdDashboardKlassenHtml(klassen || [], schuelerRows);
 
   // Wochenende: keine Stundenplan-Daten laden, aber Klassenleiste trotzdem zeigen
