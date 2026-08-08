@@ -1426,7 +1426,7 @@ async function loadStats() {
       dsLabel = `${label.replace('.', '')}. Std.`;
     }
 
-    zeilen.push({ dsLabel, dsZeit, isLZ, effFach, klasseObj, isAusgefallen, hatInhalt });
+    zeilen.push({ stunde, dsLabel, dsZeit, isLZ, effFach, effKlasseId, klasseObj, isAusgefallen, hatInhalt });
   });
 
   if (zeilen.length === 0) {
@@ -1462,12 +1462,15 @@ async function loadStats() {
             <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};display:inline-block;"></span>${z.klasseObj.name}
           </span>` : ''}
         </div>
-        <div style="flex-shrink:0;">
+        <div style="flex-shrink:0;display:flex;align-items:center;gap:8px;">
           ${z.isAusgefallen
             ? `<span style="font-size:10px;font-weight:700;background:#fee2e2;color:#b91c1c;padding:3px 8px;border-radius:20px;white-space:nowrap;">✕ Ausgefallen</span>`
             : z.hatInhalt
               ? `<span style="font-size:10px;font-weight:700;background:#dcfce7;color:#166534;padding:3px 8px;border-radius:20px;white-space:nowrap;">✓ Geplant</span>`
               : `<span style="font-size:10px;font-weight:600;background:var(--gray-100);color:var(--gray-400);padding:3px 8px;border-radius:20px;white-space:nowrap;">Kein Eintrag</span>`}
+          ${z.effKlasseId ? `<button onclick="kdDashboardZuAnwesenheit('${z.effKlasseId}',${kw},${jahr},${wochentag},${z.stunde})"
+            title="Anwesenheit für diese Stunde erfassen"
+            class="btn btn-secondary btn-sm" style="font-size:11px;padding:4px 8px;white-space:nowrap;">👥 Anwesenheit</button>` : ''}
         </div>
       </div>`;
   });
@@ -1690,6 +1693,17 @@ async function kdSpringeZuSchuelerSchnellnote(schuelerId, klasseId) {
     }
   }
   kdRenderNoten();
+}
+
+// Springt vom Dashboard direkt in die Anwesenheitserfassung einer bestimmten Stunde
+// einer Klasse (verwendet vom "👥 Anwesenheit"-Button je Zeile in "Heute").
+async function kdDashboardZuAnwesenheit(klasseId, kw, jahr, wochentag, stunde) {
+  if (!allKlassen.length) await loadKlassen();
+  await kdOeffneKlasse(klasseId);
+  kdAnwAnsicht = 'erfassen';
+  kdAnwFachFilter = null;
+  await kdZeigeUnterseite('anwesenheit');
+  kdAnwSetStunde(kw, jahr, wochentag, stunde);
 }
 
 function kdZeigeUnterseite(seite) {
