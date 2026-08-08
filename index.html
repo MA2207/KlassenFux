@@ -428,13 +428,10 @@
     .sp-fach::placeholder { font-weight: 400; color: var(--gray-300); font-size: 0.8rem; }
     .sp-klasse { font-size: 0.75rem; border: none; padding: 2px 4px; background: transparent; color: var(--green-dark); width: 100%; cursor: pointer; }
     .sp-klasse:focus { outline: none; }
-    .sp-raum { font-size: 0.72rem; border: none; padding: 2px 4px; background: transparent; color: var(--gray-400); width: 100%; }
-    .sp-raum:focus { outline: none; }
-    .sp-raum::placeholder { color: var(--gray-300); }
     .sp-fach-sel { font-size: 0.85rem; font-weight: 700; border: none; border-bottom: 1px solid transparent; padding: 3px 4px; width: 100%; background: transparent; color: var(--gray-800); cursor: pointer; }
     .sp-fach-sel:focus { outline: none; border-bottom-color: var(--green); }
     .sp-cell-frei { background: #bbf7d0 !important; }
-    .sp-cell-frei .sp-klasse, .sp-cell-frei .sp-raum { opacity: 0.4; pointer-events: none; }
+    .sp-cell-frei .sp-klasse { opacity: 0.4; pointer-events: none; }
     .klasse-color-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
     .klasse-color-swatch { width:36px; height:36px; border-radius:8px; border:2px solid rgba(0,0,0,0.1); cursor:pointer; padding:2px; }
   </style>
@@ -6217,7 +6214,7 @@ async function spVersionModalSave() {
 
     // Alle Einträge der aktuellen Version laden und kopieren
     const { data: eintraege, error: errE } = await sb.from('stundenplan')
-      .select('wochentag, stunde, fach, klasse_id, raum')
+      .select('wochentag, stunde, fach, klasse_id')
       .eq('version_id', spAktivVersionId);
     if (errE) { showToast('Fehler beim Laden: ' + errE.message, 'error'); btn.disabled = false; btn.textContent = 'Kopieren & anlegen'; return; }
 
@@ -6320,8 +6317,6 @@ function renderStundenplan() {
           <select class="sp-klasse" onchange="saveSpZelle(${tag},${stunde})">
             <option value="">– Klasse –</option>${klassenOpts}
           </select>
-          <input class="sp-raum" type="text" placeholder="Raum (optional)" value="${e.raum || ''}"
-            onchange="saveSpZelle(${tag},${stunde})">
           ${dsBadge}
         </div>
       </td>`;
@@ -6338,7 +6333,6 @@ async function saveSpZelle(wochentag, stunde) {
   const fachEl = cell.querySelector('.sp-fach-sel') || cell.querySelector('.sp-fach');
   const fach = fachEl ? fachEl.value.trim() : '';
   const klasse_id = cell.querySelector('.sp-klasse').value || null;
-  const raum = cell.querySelector('.sp-raum').value.trim();
 
   const ind = document.getElementById('sp-save-indicator');
   if (ind) ind.textContent = '💾 …';
@@ -6346,11 +6340,11 @@ async function saveSpZelle(wochentag, stunde) {
   if (!spAktivVersionId) { showToast('Keine Version aktiv.', 'error'); return; }
 
   const { error } = await sb.from('stundenplan').upsert(
-    { version_id: spAktivVersionId, wochentag, stunde, fach, klasse_id, raum },
+    { version_id: spAktivVersionId, wochentag, stunde, fach, klasse_id },
     { onConflict: 'version_id,wochentag,stunde' }
   );
 
-  spDaten[`${wochentag}-${stunde}`] = { version_id: spAktivVersionId, wochentag, stunde, fach, klasse_id, raum };
+  spDaten[`${wochentag}-${stunde}`] = { version_id: spAktivVersionId, wochentag, stunde, fach, klasse_id };
 
   // Zellfarbe sofort live aktualisieren
   const td = cell.parentElement;
