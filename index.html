@@ -641,7 +641,7 @@
 
   <!-- KLASSE DETAIL -->
   <div id="page-klasse-detail" class="hidden">
-    <div id="kd-sticky-kopf" style="position:sticky;top:0;z-index:20;background:var(--gray-50);padding-top:4px;margin-top:-4px;padding-bottom:6px;">
+    <div id="kd-sticky-kopf" style="position:sticky;top:0;z-index:90;background:var(--gray-50);padding-top:4px;margin-top:-4px;padding-bottom:6px;">
       <div class="page-header">
         <div style="display:flex;align-items:center;gap:10px;">
           <button onclick="showPage('klassen')" style="padding:5px 12px;border-radius:8px;border:1px solid var(--gray-200);background:var(--white);color:var(--gray-700);cursor:pointer;font-size:13px;white-space:nowrap;">← Zurück</button>
@@ -1528,6 +1528,7 @@ async function kdSpringeZuSchuelerNotenFach(schuelerId, klasseId, fach) {
 
 function kdZeigeUnterseite(seite) {
   kdAktiveUnterseite = seite;
+  if (typeof kdAktualisiereStickyOffsets === 'function') kdAktualisiereStickyOffsets();
   document.querySelectorAll('[data-kd-tab]').forEach(btn => {
     const isActive = btn.dataset.kdTab === seite;
     btn.style.background = isActive ? '#dcfce7' : 'transparent';
@@ -1933,10 +1934,28 @@ function kdRenderUnterricht() {
   html += `</div>`;
   container.innerHTML = html;
 
-  // Stats-Leiste direkt unter dem sticky Kopfbereich fixieren
-  const statsEl = document.getElementById('kd-uebersicht-stats');
+  kdAktualisiereStickyOffsets();
+}
+
+// Berechnet die sticky-Offsets für den Klassen-Kopfbereich und die Stats-Leiste,
+// damit sie (auch im Smartphone-Modus mit eigenem mobilen Header) sauber
+// übereinander stehen bleiben, statt sich zu überlappen.
+function kdAktualisiereStickyOffsets() {
+  const mobileHeader = document.querySelector('.mobile-header');
   const kopfEl = document.getElementById('kd-sticky-kopf');
-  if (statsEl && kopfEl) statsEl.style.top = kopfEl.offsetHeight + 'px';
+  const statsEl = document.getElementById('kd-uebersicht-stats');
+  if (!kopfEl) return;
+  const mobileHeaderSichtbar = mobileHeader && getComputedStyle(mobileHeader).display !== 'none';
+  const mobileHeaderHoehe = mobileHeaderSichtbar ? mobileHeader.offsetHeight : 0;
+  kopfEl.style.top = mobileHeaderHoehe + 'px';
+  if (statsEl) statsEl.style.top = (mobileHeaderHoehe + kopfEl.offsetHeight) + 'px';
+}
+
+if (!window._kdStickyResizeListener) {
+  window._kdStickyResizeListener = true;
+  window.addEventListener('resize', () => {
+    if (typeof kdAktualisiereStickyOffsets === 'function') kdAktualisiereStickyOffsets();
+  });
 }
 
 async function kdSpeichereUnterrichtZelle(el) {
