@@ -677,7 +677,10 @@
   <div id="page-schueler" class="hidden">
     <div class="page-header">
       <div class="page-title">Schüler</div>
-      <button class="btn btn-primary" onclick="openSchuelerForm()">＋ Neuer Schüler</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" id="schueler-auswahl-btn" onclick="kdSchuelerAuswahlModusUmschalten()">☑️ Auswählen</button>
+        <button class="btn btn-primary" onclick="openSchuelerForm()">＋ Neuer Schüler</button>
+      </div>
     </div>
     <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
       <div class="search-bar" style="flex:1; min-width:180px; margin-bottom:0;">
@@ -687,6 +690,14 @@
       <select class="form-select" id="klassen-filter" onchange="applySchuelerFilter()" style="width:auto; min-width:140px;">
         <option value="">Alle Klassen</option>
       </select>
+    </div>
+    <div id="schueler-auswahl-leiste" class="hidden" style="position:sticky;top:0;z-index:15;background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <span id="schueler-auswahl-anzahl" style="font-size:13px;font-weight:700;color:#1d4ed8;">0 ausgewählt</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="kdSchuelerAlleAuswaehlen()">Alle auswählen</button>
+        <button class="btn btn-secondary btn-sm" onclick="kdSchuelerAuswahlAufheben()">Auswahl aufheben</button>
+        <button class="btn btn-danger btn-sm" onclick="kdSchuelerAuswahlLoeschen()">🗑️ Löschen</button>
+      </div>
     </div>
     <div id="schueler-list"></div>
   </div>
@@ -1315,7 +1326,7 @@ function showPage(page) {
     el.classList.toggle('active', NAV_PAGES[i % NAV_PAGES.length] === navPage);
   });
   if (page === 'klassen') loadKlassen();
-  if (page === 'schueler') loadSchueler();
+  if (page === 'schueler') { kdSchuelerAuswahlModus = false; kdSchuelerAusgewaehlt.clear(); loadSchueler(); }
   if (page === 'dashboard') loadStats();
   if (page === 'einstellungen') loadEinstellungen();
   if (page === 'stundenplan') loadStundenplan();
@@ -4731,6 +4742,10 @@ async function kdLoescheAlleSchuelerDerKlasse(klasseId, klasseName) {
 
 // ── SCHÜLER ──
 let kdFaecherProKlasse = {}; // klasse_id → sortierte Liste der dort unterrichteten Fächer (aus dem Stundenplan)
+let kdSchuelerAuswahlModus = false;      // true = Mehrfachauswahl zum Löschen aktiv
+let kdSchuelerAusgewaehlt = new Set();   // IDs der aktuell ausgewählten Schüler
+let kdSchuelerLangDruckTimer = null;     // Timer für Lang-Halten (Touch/Maus) auf einer Schüler-Zeile
+let kdSchuelerLangDruckAusgeloest = false; // true, wenn der Lang-Halten-Timer schon ausgelöst hat (unterdrückt den nachfolgenden Klick)
 
 async function loadSchueler() {
   const { data } = await sb.from('schueler').select('*, klassen(name, schuljahr)').order('nachname').order('vorname');
@@ -4785,6 +4800,11 @@ function applySchuelerFilter() {
 
 function renderSchueler(list) {
   const el = document.getElementById('schueler-list');
+  // Schüler, die durch den aktuellen Filter herausfallen, aus der Auswahl entfernen
+  const sichtbareIds = new Set(list.map(s => s.id));
+  [...kdSchuelerAusgewaehlt].forEach(id => { if (!sichtbareIds.has(id)) kdSchuelerAusgewaehlt.delete(id); });
+  kdSchuelerAuswahlLeisteAktualisieren();
+
   if (!list.length) {
     el.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">👤</div>
@@ -4794,6 +4814,26 @@ function renderSchueler(list) {
     return;
   }
   el.innerHTML = list.map(s => {
+    const ausgewaehlt = kdSchuelerAusgewaehlt.has(s.id);
+    const langDruckAttrs = `onmousedown="kdSchuelerLangDruckStart(event,'${s.id}')" onmouseup="kdSchuelerLangDruckEnde()" onmouseleave="kdSchuelerLangDruckEnde()"
+        ontouchstart="kdSchuelerLangDruckStart(event,'${s.id}')" ontouchend="kdSchuelerLangDruckEnde()" ontouchmove="kdSchuelerLangDruckEnde()"`;
+
+    if (kdSchuelerAuswahlModus) {
+      return `
+      <div class="list-item" onclick="kdSchuelerZeilenKlick('${s.id}')" ${langDruckAttrs}
+        style="cursor:pointer;${ausgewaehlt ? 'background:#eff6ff;border:2px solid #93c5fd;' : 'border:2px solid transparent;'}">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+          <span style="width:20px;height:20px;border-radius:6px;border:2px solid ${ausgewaehlt ? '#1d4ed8' : 'var(--gray-300)'};background:${ausgewaehlt ? '#1d4ed8' : 'white'};color:white;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${ausgewaehlt ? '✓' : ''}</span>
+          <div class="list-item-info" style="flex:1;min-width:0;">
+            <div class="list-item-name">${s.nachname}, ${s.vorname}
+              <span class="badge badge-${s.geschlecht}" style="margin-left:6px">${s.geschlecht === 'm' ? '♂' : s.geschlecht === 'w' ? '♀' : ''}</span>
+            </div>
+            <div class="list-item-sub">${s.klassen ? s.klassen.name + ' · ' + s.klassen.schuljahr : 'Keine Klasse'}</div>
+          </div>
+        </div>
+      </div>`;
+    }
+
     const faecher = s.klasse_id ? (kdFaecherProKlasse[s.klasse_id] || []) : [];
     const notenBtns = faecher.length > 0
       ? faecher.map(f => `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerNotenFach('${s.id}','${s.klasse_id}','${f.replace(/'/g, "\\'")}')"
@@ -4803,7 +4843,7 @@ function renderSchueler(list) {
       ? `<button onclick="event.stopPropagation(); kdSpringeZuSchuelerSchnellnote('${s.id}','${s.klasse_id}')" class="btn btn-secondary btn-sm" title="Schnellnote eintragen" style="font-size:11px;padding:4px 9px;">⚡ Note</button>`
       : '';
     return `
-    <div class="list-item" onclick="showDetail('${s.id}')">
+    <div class="list-item" onclick="kdSchuelerZeilenKlick('${s.id}')" ${langDruckAttrs}>
       <div class="list-item-info" style="flex:1;min-width:0;">
         <div class="list-item-name">${s.nachname}, ${s.vorname}
           <span class="badge badge-${s.geschlecht}" style="margin-left:6px">${s.geschlecht === 'm' ? '♂' : s.geschlecht === 'w' ? '♀' : ''}</span>
@@ -4817,6 +4857,105 @@ function renderSchueler(list) {
     </div>
   `;
   }).join('');
+}
+
+// Zentraler Klick-Handler für eine Schüler-Zeile: unterdrückt den Klick, falls er
+// direkt auf ein gerade ausgelöstes Lang-Halten folgt (sonst würde die Auswahl
+// durch den nachfolgenden "click" sofort wieder umgeschaltet werden).
+function kdSchuelerZeilenKlick(id) {
+  if (kdSchuelerLangDruckAusgeloest) { kdSchuelerLangDruckAusgeloest = false; return; }
+  if (kdSchuelerAuswahlModus) kdSchuelerAuswahlUmschalten(id);
+  else showDetail(id);
+}
+
+// ── Mehrfachauswahl zum Löschen ──
+
+function kdSchuelerAuswahlModusUmschalten() {
+  kdSchuelerAuswahlModus = !kdSchuelerAuswahlModus;
+  if (!kdSchuelerAuswahlModus) kdSchuelerAusgewaehlt.clear();
+  const btn = document.getElementById('schueler-auswahl-btn');
+  if (btn) {
+    btn.textContent = kdSchuelerAuswahlModus ? '✕ Abbrechen' : '☑️ Auswählen';
+    btn.classList.toggle('btn-primary', kdSchuelerAuswahlModus);
+    btn.classList.toggle('btn-secondary', !kdSchuelerAuswahlModus);
+  }
+  const leiste = document.getElementById('schueler-auswahl-leiste');
+  if (leiste) leiste.classList.toggle('hidden', !kdSchuelerAuswahlModus);
+  applySchuelerFilter();
+}
+
+function kdSchuelerAuswahlUmschalten(id) {
+  if (kdSchuelerAusgewaehlt.has(id)) kdSchuelerAusgewaehlt.delete(id); else kdSchuelerAusgewaehlt.add(id);
+  applySchuelerFilter();
+}
+
+function kdSchuelerAlleAuswaehlen() {
+  const q = (document.getElementById('schueler-search')?.value || '').toLowerCase();
+  const klasseId = document.getElementById('klassen-filter')?.value || '';
+  let list = allSchueler;
+  if (klasseId) list = list.filter(s => s.klasse_id === klasseId);
+  if (q) list = list.filter(s =>
+    s.nachname.toLowerCase().includes(q) ||
+    s.vorname.toLowerCase().includes(q) ||
+    (s.klassen?.name || '').toLowerCase().includes(q)
+  );
+  list.forEach(s => kdSchuelerAusgewaehlt.add(s.id));
+  applySchuelerFilter();
+}
+
+function kdSchuelerAuswahlAufheben() {
+  kdSchuelerAusgewaehlt.clear();
+  applySchuelerFilter();
+}
+
+function kdSchuelerAuswahlLeisteAktualisieren() {
+  const anzeige = document.getElementById('schueler-auswahl-anzahl');
+  if (anzeige) anzeige.textContent = `${kdSchuelerAusgewaehlt.size} ausgewählt`;
+}
+
+async function kdSchuelerAuswahlLoeschen() {
+  const ids = [...kdSchuelerAusgewaehlt];
+  if (ids.length === 0) { showToast('Bitte zuerst Schüler auswählen.', 'error'); return; }
+  const namen = allSchueler.filter(s => ids.includes(s.id)).map(s => `${s.nachname}, ${s.vorname}`);
+  const vorschau = namen.slice(0, 8).join('\n') + (namen.length > 8 ? `\n… und ${namen.length - 8} weitere` : '');
+  if (!confirm(`${ids.length} Schüler wirklich löschen?\n\nAlle zugehörigen Daten (Noten, Anwesenheit, Hausaufgaben, Kontakte usw.) werden mit gelöscht.\n\n${vorschau}`)) return;
+
+  const { error } = await sb.from('schueler').delete().in('id', ids);
+  if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+
+  showToast(`${ids.length} Schüler gelöscht.`, 'success');
+  kdSchuelerAusgewaehlt.clear();
+  kdSchuelerAuswahlModusUmschalten(); // Auswahlmodus wieder verlassen
+  await loadSchueler();
+  loadStats();
+}
+
+// Lang-Halten auf einer Schüler-Zeile aktiviert den Auswahlmodus und wählt die Zeile direkt mit aus
+// (Maus: mousedown/up, Touch: touchstart/end — funktioniert also am PC wie am Smartphone)
+function kdSchuelerLangDruckStart(event, id) {
+  kdSchuelerLangDruckEnde();
+  kdSchuelerLangDruckTimer = setTimeout(() => {
+    kdSchuelerLangDruckTimer = null;
+    kdSchuelerLangDruckAusgeloest = true;
+    if (!kdSchuelerAuswahlModus) {
+      kdSchuelerAuswahlModus = true;
+      const btn = document.getElementById('schueler-auswahl-btn');
+      if (btn) {
+        btn.textContent = '✕ Abbrechen';
+        btn.classList.add('btn-primary');
+        btn.classList.remove('btn-secondary');
+      }
+      const leiste = document.getElementById('schueler-auswahl-leiste');
+      if (leiste) leiste.classList.remove('hidden');
+    }
+    kdSchuelerAusgewaehlt.add(id);
+    if (navigator.vibrate) navigator.vibrate(20);
+    applySchuelerFilter();
+  }, 500);
+}
+
+function kdSchuelerLangDruckEnde() {
+  if (kdSchuelerLangDruckTimer) { clearTimeout(kdSchuelerLangDruckTimer); kdSchuelerLangDruckTimer = null; }
 }
 
 // ══════════════════════════════════════════════════════════════════
