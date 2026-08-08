@@ -1601,6 +1601,15 @@ async function kdLadeCheckliste() {
 }
 
 // ── Unterricht-Tab ──────────────────────────────────────────────
+// Wandelt eine interne Stundenplan-Nummer (1-9, inkl. LZ-Zeile) in die tatsächlich
+// angezeigte Stundenzahl um (z.B. interne 6 → "5", weil die LZ-Zeile intern mitzählt,
+// aber in der Anzeige keine eigene Zahl bekommt). Ohne diese Umrechnung würden
+// alle Stunden nach der LZ mit einer um 1 zu hohen Nummer angezeigt.
+function kdStundenLabel(internStunde) {
+  const row = SP_STUNDEN.find(s => s.stunde === internStunde);
+  return row ? row.label.replace('.', '') : String(internStunde);
+}
+
 function kdDatumAusKW(kw, jahr, wochentag) {
   const monday = getMondayOfWeek(kw, jahr);
   const d = new Date(monday);
@@ -1919,7 +1928,7 @@ function kdRenderUnterricht() {
         <div style="padding:12px 14px;background:${rowBg};border-right:2px solid var(--gray-100);display:flex;flex-direction:column;justify-content:center;gap:4px;">
           <div style="font-size:13px;font-weight:700;color:var(--gray-800);">${wdKurz[r.wochentag]}, ${datumStr}</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;">
-            <span style="background:${r._isDoppelstunde ? '#fef3c7' : 'var(--gray-100)'};color:${r._isDoppelstunde ? '#92400e' : 'var(--gray-600)'};font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;">${r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std.` : `${r.stunde}. Std.`}</span>
+            <span style="background:${r._isDoppelstunde ? '#fef3c7' : 'var(--gray-100)'};color:${r._isDoppelstunde ? '#92400e' : 'var(--gray-600)'};font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;">${r._isDoppelstunde ? `${kdStundenLabel(r.stunde)}.–${kdStundenLabel(r._doppelstundeEnde)}. Std.` : `${kdStundenLabel(r.stunde)}. Std.`}</span>
             ${(r.fach||r._spFach) ? `<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;">${r.fach||r._spFach}</span>` : ''}
           </div>
           ${r.ausgefallen ? '<span style="font-size:10px;font-weight:700;background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:20px;white-space:nowrap;">✕ Ausgefallen</span>' : (!hasContent ? '<div style="font-size:10px;color:var(--gray-300);margin-top:2px;">Kein Eintrag</div>' : '')}
@@ -2271,7 +2280,7 @@ function kdRenderAnwErfassen(vergangenStunden) {
             const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
             const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
             const fachLabel = (r.fach||r._spFach) ? ` · ${r.fach||r._spFach}` : '';
-            const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std. (Doppelstunde)` : `${r.stunde}. Std.`;
+            const stdLabel = r._isDoppelstunde ? `${kdStundenLabel(r.stunde)}.–${kdStundenLabel(r._doppelstundeEnde)}. Std. (Doppelstunde)` : `${kdStundenLabel(r.stunde)}. Std.`;
             const istZukunft = datum > heuteEnde;
             const zukunftLabel = istZukunft ? ' 📅' : '';
             return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${stdLabel}${fachLabel}${zukunftLabel}</option>`;
@@ -2427,7 +2436,7 @@ function kdRenderAnwUebersicht(vergangenStunden) {
             const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
             const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
             const fach = r.fach || r._spFach;
-            const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
+            const stdLabel = r._isDoppelstunde ? `${kdStundenLabel(r.stunde)}–${kdStundenLabel(r._doppelstundeEnde)}` : `${kdStundenLabel(r.stunde)}.`;
             const hj = kdHjFuerLesson(r);
             const thBg = hjThBg[hj] || hjThBg[0];
             return `<th style="background:${thBg};color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''} · ${hj?hj+'.HJ':''}">
@@ -2635,7 +2644,7 @@ function kdRenderHaErfassen(alleStunden) {
               const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
               const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
               const fachLabel = (r.fach||r._spFach) ? ` · ${r.fach||r._spFach}` : '';
-              const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std.` : `${r.stunde}. Std.`;
+              const stdLabel = r._isDoppelstunde ? `${kdStundenLabel(r.stunde)}.–${kdStundenLabel(r._doppelstundeEnde)}. Std.` : `${kdStundenLabel(r.stunde)}. Std.`;
               const zukunftLabel = datum > heuteEnde ? ' 📅' : '';
               return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${stdLabel}${fachLabel}${zukunftLabel}</option>`;
             }).join('')}
@@ -2776,7 +2785,7 @@ function kdRenderHaUebersicht(alleStunden) {
         ${tabellenSpalten.map(r => {
           const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
           const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
-          const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
+          const stdLabel = r._isDoppelstunde ? `${kdStundenLabel(r.stunde)}–${kdStundenLabel(r._doppelstundeEnde)}` : `${kdStundenLabel(r.stunde)}.`;
           const hj = kdHjFuerLesson(r);
           const thBg = hjThBgHa[hj] || hjThBgHa[0];
           return `<th style="background:${thBg};color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:42px;" title="${r.fach||r._spFach||''} · ${hj?hj+'.HJ':''}">
@@ -2971,7 +2980,7 @@ function kdRenderUbErfassen(alleStunden) {
               const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
               const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
               const fachLabel = (r.fach||r._spFach) ? ` · ${r.fach||r._spFach}` : '';
-              const stdLabel = r._isDoppelstunde ? `${r.stunde}.–${r._doppelstundeEnde}. Std. (Doppelstunde)` : `${r.stunde}. Std.`;
+              const stdLabel = r._isDoppelstunde ? `${kdStundenLabel(r.stunde)}.–${kdStundenLabel(r._doppelstundeEnde)}. Std. (Doppelstunde)` : `${kdStundenLabel(r.stunde)}. Std.`;
               const istZukunft = datum > heuteEnde;
               return `<option value="${rKey}" ${rKey===aktKey?'selected':''}>${wdKurz[r.wochentag]}, ${datumStr} · ${stdLabel}${fachLabel}${istZukunft?' 📅':''}</option>`;
             }).join('')}
@@ -3116,7 +3125,7 @@ function kdRenderUbUebersicht(alleStunden) {
           const datum = kdDatumAusKW(r.kalenderwoche, r.jahr, r.wochentag);
           const datumStr = datum.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
           const fach = r.fach || r._spFach;
-          const stdLabel = r._isDoppelstunde ? `${r.stunde}–${r._doppelstundeEnde}` : `${r.stunde}.`;
+          const stdLabel = r._isDoppelstunde ? `${kdStundenLabel(r.stunde)}–${kdStundenLabel(r._doppelstundeEnde)}` : `${kdStundenLabel(r.stunde)}.`;
           const hj = kdHjFuerLesson(r);
           const thBg = hjThBgUb[hj] || hjThBgUb[0];
           return `<th style="background:${thBg};color:white;padding:5px 6px;font-size:10px;text-align:center;white-space:nowrap;min-width:${r._isDoppelstunde?'52px':'42px'};" title="${fach||''} · ${hj?hj+'.HJ':''}">
@@ -6869,7 +6878,7 @@ function renderUpTag(tagNr) {
     let dsZeit = zeit;
     if (isDSStart) {
       skipStunden.add(stunde + 1);
-      dsLabel = `${label.replace('.','')}.–${stunde + 1}. Std.`;
+      dsLabel = `${label.replace('.','')}.–${kdStundenLabel(stunde + 1)}. Std.`;
       const zeitIdx2 = SP_STUNDEN.findIndex(s => s.stunde === stunde + 1);
       const zeit2 = upZeitLabel(zeitIdx2);
       if (zeit2) dsZeit = `${zeit}–${zeit2.split('–')[1] || zeit2}`;
